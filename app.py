@@ -15,51 +15,59 @@ except Exception:
     st.sidebar.title("4SAS - Operações")
 
 st.sidebar.markdown("---")
-# Removido o ícone do pino vermelho conforme solicitado
 st.sidebar.header("Localização do Levantamento")
 
 # Escolha do método de entrada de posição
-modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas Manuais"])
+modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas (Graus e Minutos - DM)"])
 
-lat, lon = -22.42, -41.02  # Padrão inicial (Barra do Furado)
+lat, lon = -22.42, -41.02  # Padrão inicial
 nome_local_exibicao = "Barra do Furado, RJ"
 
 if modo_pos == "Busca por Nome":
-    termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Porto do Açu)", value="Barra do Furado")
-    try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={termo_busca}&count=1&language=pt&format=json"
-        resp = requests.get(url).json()
-        if "results" in resp and len(resp["results"]) > 0:
-            lat = resp["results"][0]["latitude"]
-            lon = resp["results"][0]["longitude"]
-            cidade = resp["results"][0].get("name", termo_busca)
-            pais = resp["results"][0].get("country", "")
-            nome_local_exibicao = f"{cidade} ({pais})"
-            st.sidebar.success(f"Encontrado: **{nome_local_exibicao}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
-        else:
-            st.sidebar.error("Local não encontrado. Usando padrão.")
-    except Exception:
-        st.sidebar.error("Erro na busca. Usando padrão.")
-else:
-    st.sidebar.markdown("**Insira sua coordenada aqui:**")
-    tipo_coord = st.sidebar.selectbox("Sistema de Coordenadas", ["Latitude / Longitude (Decimais)", "UTM (X e Y)"])
+    # Campo iniciado vazio conforme solicitado
+    termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Porto do Açu)", value="")
     
-    if tipo_coord == "Latitude / Longitude (Decimais)":
-        lat = st.sidebar.number_input("Latitude", value=-22.4200, format="%.4f")
-        lon = st.sidebar.number_input("Longitude", value=-41.0200, format="%.4f")
-        nome_local_exibicao = f"Lat: {lat}, Lon: {lon}"
+    if termo_busca.strip() != "":
+        try:
+            url = f"https://geocoding-api.open-meteo.com/v1/search?name={termo_busca}&count=1&language=pt&format=json"
+            resp = requests.get(url).json()
+            if "results" in resp and len(resp["results"]) > 0:
+                lat = resp["results"][0]["latitude"]
+                lon = resp["results"][0]["longitude"]
+                cidade = resp["results"][0].get("name", termo_busca)
+                pais = resp["results"][0].get("country", "")
+                nome_local_exibicao = f"{cidade} ({pais})"
+                st.sidebar.success(f"Encontrado: **{nome_local_exibicao}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
+            else:
+                st.sidebar.error("Local não encontrado.")
+        except Exception:
+            st.sidebar.error("Erro na busca.")
     else:
-        st.sidebar.info("Conversor básico UTM para WGS84 (Aproximado)")
-        x_utm = st.sidebar.number_input("Coordenada X (Easting)", value=300000.0)
-        y_utm = st.sidebar.number_input("Coordenada Y (Northing)", value=7500000.0)
-        zona = st.sidebar.number_input("Fuso / Zona UTM", value=23, min_value=1, max_value=60)
-        
-        # Conversão aproximada de UTM simples para fins de demonstração no app
-        # (Para cálculos rigorosos embarcados, usa-se pyproj, mantido leve aqui)
-        lat = -22.0 - ((y_utm - 7000000) / 111000)
-        lon = -43.0 + ((x_utm - 500000) / 100000)
-        nome_local_exibicao = f"UTM X:{x_utm} Y:{y_utm} (Zona {zona})"
-        st.sidebar.success(f"Convertido p/ Lat/Lon: {lat:.4f}, {lon:.4f}")
+        st.sidebar.info("Digite um nome de localidade acima.")
+        nome_local_exibicao = "Local Personalizado"
+else:
+    st.sidebar.markdown("**Insira as Coordenadas (DM):**")
+    st.sidebar.markdown("Ex: Lat: -22 e 25.2' | Lon: -41 e 1.2'")
+    
+    # Entradas em Graus e Minutos Decimais
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        lat_graus = st.number_input("Lat Graus", value=-22, step=1)
+        lat_min = st.number_input("Lat Minutos", value=25.20, format="%.2f", step=0.01)
+    with col2:
+        lon_graus = st.number_input("Lon Graus", value=-41, step=1)
+        lon_min = st.number_input("Lon Minutos", value=1.20, format="%.2f", step=0.01)
+    
+    # Conversão de Graus e Minutos Decimais (DM) para Graus Decimais (Decimal Degrees)
+    # Lógica considerando sinais negativos para o hemisfério sul/oeste
+    lat_sinal = -1 if lat_graus <= 0 else 1
+    lon_sinal = -1 if lon_graus <= 0 else 1
+    
+    lat = lat_graus + (lat_sinal * (lat_min / 60.0))
+    lon = lon_graus + (lon_sinal * (lon_min / 60.0))
+    
+    nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
+    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lon:.4f}")
 
 # Exibe o mapa nativo do Streamlit com a posição selecionada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
@@ -131,7 +139,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    # Título alterado para Boletim Meteoceanográfico sem o ícone de onda
     st.title("Boletim Meteoceanográfico")
     st.subheader(f"Previsão Tática para: {nome_local_exibicao}")
     
@@ -154,4 +161,4 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
-    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v2")
+    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v3")
