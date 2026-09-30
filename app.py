@@ -4,13 +4,16 @@ import numpy as np
 import requests
 import plotly.express as px
 from PIL import Image
+from fpdf import FPDF
+import tempfile
+import os
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
 # 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, width=120)
+    st.sidebar.image(logo, width=180)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
@@ -134,11 +137,11 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         vento = row['Vento_Nos']
         
         if onda > 2.0 or vento > 20.0:
-            return "🔴 SEM OPERAÇÃO (NO-GO)", "Limite crítico excedido"
+            return "SEM OPERACAO (NO-GO)", "Limite critico excedido"
         elif (1.5 < onda <= 2.0) | (15.0 <= vento <= 20.0):
-            return "🟡 AVALIAÇÃO TÉCNICA", "Condição limítrofe"
+            return "AVALIACAO TECNICA", "Condicao limitrofe"
         else:
-            return "🟢 FAVORÁVEL", "Dentro da janela"
+            return "FAVORAVEL", "Dentro da janela"
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
@@ -154,19 +157,72 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
-    st.subheader(f"Análise Gráfica Temporal: Janela de {dias_janela} Dias")
+    # --- FUNÇÃO DE GERAÇÃO DE PDF ---
+    def gerar_pdf(dataframe, local_nome, dias):
+        pdf = FPDF(orientation='L', unit='mm', format='A4')
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 16)
+        
+        pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO OPERACIONAL", ln=True, align="C")
+        pdf.set_font("helvetica", "", 11)
+        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Lat/Lon: {lat:.4f}, {lon:.4f}", ln=True, align="C")
+        pdf.ln(5)
+        
+        pdf.set_font("helvetica", "B", 9)
+        colunas = ["Data / Hora", "Mare (m)", "Onda (m)", "Dir Onda", "Vento (kn)", "Dir Vento", "Status Operacional"]
+        larguras = [40, 25, 25, 25, 25, 25, 60]
+        
+        for i, col in enumerate(colunas):
+            pdf.cell(larguras[i], 8, col, border=1, align="C")
+        pdf.ln()
+        
+        pdf.set_font("helvetica", "", 8)
+        for _, row in dataframe.iterrows():
+            pdf.cell(larguras[0], 6, str(row['Data_Hora'])[:-3], border=1, align="C")
+            pdf.cell(larguras[1], 6, f"{row['Mare_Altura(m)']:.2f}", border=1, align="C")
+            pdf.cell(larguras[2], 6, f"{row['Onda_Altura(m)']:.2f}", border=1, align="C")
+            pdf.cell(larguras[3], 6, str(row['Onda_Dir']), border=1, align="C")
+            pdf.cell(larguras[4], 6, f"{row['Vento_Nos']:.1f}", border=1, align="C")
+            pdf.cell(larguras[5], 6, str(row['Vento_Dir']), border=1, align="C")
+            pdf.cell(larguras[6], 6, str(row['Status']), border=1, align="C")
+            pdf.ln()
+            
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        pdf.output(temp_file.name)
+        return temp_file.name
+
+    pdf_path = gerar_pdf(df, nome_local_exibicao, dias_janela)
+    with open(pdf_path, "rb") as pdf_file:
+        st.download_button(
+            label="📄 Baixar Boletim em PDF",
+            data=pdf_file,
+            file_name="boletim_meteo_4sas.pdf",
+            mime="application/pdf",
+            key="btn_pdf"
+        )
     
-    fig = px.line(
+    # --- GRÁFICO 1: MARÉ E ONDAS ---
+    st.subheader(f"Análise Temporal (Maré e Altura de Onda): Janela de {dias_janela} Dias")
+    fig_geral = px.line(
         df, 
         x='Data_Hora', 
         y=['Mare_Altura(m)', 'Onda_Altura(m)'],
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
+    fig_geral.data[0].update(line_width=3)
+    fig_geral.data[1].update(line_width=3)
+    st.plotly_chart(fig_geral, use_container_width=True, key="grafico_temporal_geral")
     
-    fig.data[0].update(line_width=3)
-    fig.data[1].update(line_width=3)
-    
-    st.plotly_chart(fig, use_container_width=True, key="grafico_temporal_v4")
+    # --- GRÁFICO 2: VENTO TEMPORAL (NOVO) ---
+    st.subheader(f"Análise Temporal de Vento (Velocidade): Janela de {dias_janela} Dias")
+    fig_vento_temp = px.line(
+        df, 
+        x='Data_Hora', 
+        y='Vento_Nos',
+        labels={'Vento_Nos': 'Velocidade do Vento (nós)', 'Data_Hora': 'Horário'}
+    )
+    fig_vento_temp.update_traces(line_color='#0083B8', line_width=3)
+    st.plotly_chart(fig_vento_temp, use_container_width=True, key="grafico_vento_temporal")
     
     # --- SEÇÃO DE ROSAS (VENTO E ONDA) ---
     st.markdown("---")
@@ -176,7 +232,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     with col_r1:
         st.markdown("**Rosa de Ventos (Frequência por Direção e Intensidade)**")
-        # Prepara os dados para a rosa de ventos polar
         df_vento_clean = df.dropna(subset=['Vento_Dir', 'Vento_Nos'])
         if not df_vento_clean.empty:
             fig_wind = px.bar_polar(
@@ -195,7 +250,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             
     with col_r2:
         st.markdown("**Rosa de Ondas / Swell (Altura por Direção)**")
-        # Prepara os dados para a rosa de ondas polar
         df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Altura(m)'])
         if not df_onda_clean.empty:
             fig_wave = px.bar_polar(
