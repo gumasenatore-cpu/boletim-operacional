@@ -5,29 +5,40 @@ import requests
 import plotly.express as px
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
-st.title("🌊 Painel de Operações Hidrográficas (4SAS)")
-st.markdown("Avaliação de Janela Meteorológica, Direções Cardinais e Maré Harmônica")
 
-# 1. Configuração de Localidades e Coordenadas
+# Cabeçalho da Barra Lateral com identidade visual
+st.sidebar.title("4SAS - Operações")
+st.sidebar.markdown("---")
 st.sidebar.header("📍 Localização do Levantamento")
 
-locais_dict = {
-    "Barra do Furado, RJ": {"lat": -22.42, "lon": -41.02},
-    "Porto do Açu, RJ": {"lat": -21.85, "lon": -41.03},
-    "Bacia de Campos (Offshore)": {"lat": -22.18, "lon": -40.50},
-    "Personalizado (Digitar Coordenadas)": {"lat": -22.18, "lon": -41.12}
-}
+# Função para buscar coordenadas digitando o nome do local (Geocoding API)
+def buscar_coordenadas(nome_local):
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={nome_local}&count=1&language=pt&format=json"
+        resp = requests.get(url).json()
+        if "results" in resp and len(resp["results"]) > 0:
+            lat = resp["results"][0]["latitude"]
+            lon = resp["results"][0]["longitude"]
+            nome_encontrado = resp["results"][0].get("name", nome_local)
+            pais = resp["results"][0].get("country", "")
+            return lat, lon, f"{nome_encontrado} ({pais})"
+    except Exception:
+        pass
+    return None, None, None
 
-escolha_local = st.sidebar.selectbox("Selecione a Área", list(locais_dict.keys()))
+# Campo de digitação livre para o local
+termo_busca = st.sidebar.text_input("Buscar Localidade (ex: Barra do Furado)", value="Barra do Furado")
 
-if escolha_local == "Personalizado (Digitar Coordenadas)":
-    lat = st.sidebar.number_input("Latitude", value=-22.18, format="%.4f")
-    lon = st.sidebar.number_input("Longitude", value=-41.12, format="%.4f")
+# Se o usuário digitou algo, busca a coordenada na API
+lat, lon, nome_formatado = buscar_coordenadas(termo_busca)
+
+if lat is not None and lon is not None:
+    st.sidebar.success(Encontrado: **{nome_formatado}**\nLat: {lat:.4f}, Lon: {lon:.4f})
 else:
-    lat = locais_dict[escolha_local]["lat"]
-    lon = locais_dict[escolha_local]["lon"]
-    st.sidebar.info(f"Coordenadas fixas: **{lat}, {lon}**")
+    st.sidebar.error("Local não encontrado. Usando coordenadas padrão.")
+    lat, lon = -22.42, -41.02 # Padrão Barra do Furado
 
+# Exibe o mapa nativo do Streamlit com a posição encontrada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
@@ -58,7 +69,6 @@ def carregar_dados(lat_val, lon_val):
         'Vento_Dir_Num': resp_vento['hourly']['wind_direction_10m']
     })
     
-    # Aplica a conversão de graus para direções cardinais
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
@@ -84,7 +94,6 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
     df = carregar_dados(lat, lon)
     
-    # Motor de Regras 4SAS
     def regras(row):
         onda = row['Onda_Altura(m)']
         vento = row['Vento_Nos']
@@ -98,15 +107,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    st.subheader(f"Previsão Tática para: {escolha_local} (Lat: {lat}, Lon: {lon})")
+    st.title("🌊 Painel de Operações Hidrográficas")
+    st.subheader(f"Previsão Tática para: {termo_busca.capitalize()} (Lat: {lat:.4f}, Lon: {lon:.4f})")
     
-    # Exibe a tabela formatada com as direções limpas (ex: ENE, SE, S)
     st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
     st.subheader("Análise Gráfica: Janela Operacional de 4 Dias")
     
-    # Filtro de 4 dias (96 horas)
     data_inicio = df['Data_Hora'].min()
     data_fim = data_inicio + pd.Timedelta(days=4)
     df_4dias = df[(df['Data_Hora'] >= data_inicio) & (df['Data_Hora'] <= data_fim)]
@@ -118,10 +126,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
     
-    fig.data[0].update(line_width=3)
-    fig.data[1].update(line_width=3)
-    
-    st.plotly_chart(fig, use_container_width=True)
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
