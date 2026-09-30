@@ -3,11 +3,17 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.express as px
+from PIL import Image
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# Cabeçalho da Barra Lateral com identidade visual
-st.sidebar.title("4SAS - Operações")
+# Exibe a logo da 4SAS no topo da barra lateral
+try:
+    logo = Image.open("logo.png")
+    st.sidebar.image(logo, use_container_width=True)
+except Exception:
+    st.sidebar.title("4SAS - Operações")
+
 st.sidebar.markdown("---")
 st.sidebar.header("📍 Localização do Levantamento")
 
@@ -33,13 +39,14 @@ termo_busca = st.sidebar.text_input("Buscar Localidade (ex: Barra do Furado)", v
 lat, lon, nome_formatado = buscar_coordenadas(termo_busca)
 
 if lat is not None and lon is not None:
-    st.sidebar.success(Encontrado: **{nome_formatado}**\nLat: {lat:.4f}, Lon: {lon:.4f})
+    st.sidebar.success(f"Encontrado: **{nome_formatado}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
 else:
     st.sidebar.error("Local não encontrado. Usando coordenadas padrão.")
     lat, lon = -22.42, -41.02 # Padrão Barra do Furado
 
 # Exibe o mapa nativo do Streamlit com a posição encontrada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
 # Função auxiliar para converter graus em pontos cardeais
@@ -126,6 +133,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
     
+    fig.data[0].update(line_width=3)
+    fig.data[1].update(line_width=3)
+    
+    st.plotly_chart(fig, use_container_width=True)
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
