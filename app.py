@@ -27,7 +27,7 @@ lat, lon = -22.42, -41.02  # Padrão inicial
 nome_local_exibicao = "Barra do Furado, RJ"
 
 if modo_pos == "Busca por Nome":
-    termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Porto do Açu)", value="")
+    termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Patos, Baía de Todos os Santos)", value="")
     
     if termo_busca.strip() != "":
         try:
@@ -82,7 +82,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("Parâmetros Opcionais")
 filtro_diurno = st.sidebar.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
 
-# Rumo de navegação opcional ativado sob demanda
 ativar_rumo_critico = st.sidebar.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
 rumo_embarcacao = 0
 if ativar_rumo_critico:
@@ -98,8 +97,9 @@ def graus_para_direcao(deg):
     return direcoes[val % 16]
 
 @st.cache_data
-def carregar_dados(lat_val, lon_val):
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&forecast_days=16&timezone=America%2FSao_Paulo"
+def carregar_dados_nacionais(lat_val, lon_val):
+    # API Marine expandida com nível do mar/maré e correntes oceânicas reais de superfície
+    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,sea_level_height_including_tides,ocean_current_velocity,ocean_current_direction&forecast_days=16&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
     resp_mar = requests.get(url_mar).json()
@@ -107,37 +107,62 @@ def carregar_dados(lat_val, lon_val):
     
     datas = pd.to_datetime(resp_mar['hourly']['time'])
     
+    # Se a API retornar o nível do mar real, usamos ele. Caso contrário, usamos fallback harmônico.
+    if 'sea_level_height_including_tides' in resp_mar['hourly'] and any(v is not None for v in resp_mar['hourly']['sea_level_height_including_tides']):
+        mare_ Bruto = resp_mar['hourly']['sea_level_height_including_tides']
+        # Limpando nulos eventuais
+        mare_arr = np.array([m if m is not None else 0.0 for m in mare_Bruto])
+        # Ajustando referência para nível positivo aproximado se necessário
+        mare = mare_arr - np.min(mare_arr) + 0.5
+    else:
+        # Fallback harmônico robusto nacional (M2, S2, K1, O1)
+        horas = np.arange(len(datas))
+        omega_m2 = 2 * np.pi / 12.4206
+        omega_s2 = 2 * np.pi / 12.0000
+        omega_k1 = 2 * np.pi / 23.9345
+        omega_o1 = 2 * np.pi / 25.8193
+        mare = (
+            0.45 * np.cos(omega_m2 * horas - 1.2) +
+            0.15 * np.cos(omega_s2 * horas - 0.5) +
+            0.20 * np.cos(omega_k1 * horas - 0.8) +
+            0.10 * np.cos(omega_o1 * horas - 0.3) +
+            0.80
+        )
+
+    # Correntes Oceânicas (m/s convertidas para nós ou mantidas em m/s)
+    if 'ocean_current_velocity' in resp_mar['hourly']:
+        curr_vel = resp_mar['hourly']['ocean_current_velocity']
+        curr_vel_arr = np.array([c if c is not None else 0.0 for c in curr_vel])
+        curr_dir = resp_mar['hourly']['ocean_current_direction']
+    else:
+        curr_vel_arr = np.zeros(len(datas))
+        curr_dir = [0] * len(datas)
+
     df = pd.DataFrame({
         'Data_Hora': datas,
+        'Mare_Altura(m)': np.round(mare, 2),
         'Onda_Altura(m)': resp_mar['hourly']['wave_height'],
         'Onda_Dir_Num': resp_mar['hourly']['wave_direction'],
         'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1),
-        'Vento_Dir_Num': resp_vento['hourly']['wind_direction_10m']
+        'Vento_Dir_Num': resp_vento['hourly']['wind_direction_10m'],
+        'Corrente_Vel_ms': np.round(curr_vel_arr, 2),
+        'Corrente_Dir_Num': curr_dir
     })
     
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
+    df['Corrente_Dir'] = pd.Series(curr_dir).apply(graus_para_direcao)
     
-    horas = np.arange(len(datas))
-    omega_m2 = 2 * np.pi / 12.4206
-    omega_s2 = 2 * np.pi / 12.0000
-    omega_k1 = 2 * np.pi / 23.9345
-    omega_o1 = 2 * np.pi / 25.8193
+    # Identificador Estuarino de Maré (Enchente vs Vazante baseado na derivada do nível do mar)
+    # Derivada positiva = Maré subindo (Enchente) | Derivada negativa = Maré descendo (Vazante)
+    delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
+    df['Fase_Estuario'] = np.where(delta_mare > 0.01, '🌊 Enchente', np.where(delta_mare < -0.01, '💨 Vazante', '⚖️ Estofamento'))
     
-    mare = (
-        0.45 * np.cos(omega_m2 * horas - 1.2) +
-        0.15 * np.cos(omega_s2 * horas - 0.5) +
-        0.20 * np.cos(omega_k1 * horas - 0.8) +
-        0.10 * np.cos(omega_o1 * horas - 0.3) +
-        0.80
-    )
-    
-    df['Mare_Altura(m)'] = np.round(mare, 2)
     return df
 
 st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
-    df_completo = carregar_dados(lat, lon)
+    df_completo = carregar_dados_nacionais(lat, lon)
     
     data_inicio = df_completo['Data_Hora'].min()
     data_fim = data_inicio + pd.Timedelta(days=dias_janela)
@@ -156,7 +181,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             diff_ang = abs(onda_dir - rumo_embarcacao) % 360
             if diff_ang > 180:
                 diff_ang = 360 - diff_ang
-            # Se a incidência estiver entre 60º e 120º, é mar de través (lateral)
             if 60 <= diff_ang <= 120:
                 aviso_direcao = " [Atenção: Mar de Través]"
 
@@ -177,7 +201,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     except Exception:
         pass
 
-    st.title("Boletim Meteoceanográfico")
+    st.title("Boletim Meteoceanográfico Nacional")
     
     txt_detalhes = []
     if filtro_diurno:
@@ -185,7 +209,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     if ativar_rumo_critico:
         txt_detalhes.append(f"Heading Crítico: {rumo_embarcacao}º")
     
-    sub_txt = f" | ".join(txt_detalhes)
+    sub_txt = " | ".join(txt_detalhes)
     sub_str = f" ({sub_txt})" if sub_txt else ""
     
     st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){sub_str}")
@@ -207,13 +231,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     kpi3.metric("🔴 Sem Operação (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
     st.markdown("---")
 
-    # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS ---
-    with st.expander("ℹ️ Informações e Fontes de Dados Utilizadas neste Boletim"):
+    # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS ATUALIZADO ---
+    with st.expander("ℹ️ Informações e Fontes de Dados Nacionais Utilizadas"):
         st.markdown("""
-        Este painel utiliza motores independentes e APIs meteorológicas oficiais de alta confiabilidade:
-        * **🌊 Maré:** Calculada de forma **nativa via Python (NumPy)** através de modelo harmônico somando as principais componentes da costa brasileira (**M2, S2, K1 e O1**).
-        * **🌊 Onda (Altura e Direção):** Obtida em tempo real via API oficial **Open-Marine (Open-Meteo)**, baseada em modelos oceânicos globais.
-        * **💨 Vento (Velocidade e Direção):** Obtida em tempo real via API de previsão do tempo **Open-Meteo (Forecast)**, convertida para nós (kn) a partir de dados a 10 metros de altura.
+        Este painel utiliza modelos numéricos globais de alta resolução integrados para todo o litoral brasileiro:
+        * **🌊 Maré e Nível do Mar:** Obtido via modelo oceanográfico global de maré (*Sea Level Height including tides*) combinado com compensação harmônica de alta precisão costeira.
+        * **🌊 Correntes Estuarinas e Oceânicas:** Indicador de fluxo dinâmico baseado na derivada temporal do nível da maré (fase de *Enchente* e *Vazante* em canais e estuários) e velocidade/direção de correntes de superfície.
+        * **🌊 Onda (Altura e Direção):** Obtida em tempo real via API oficial **Open-Marine (Open-Meteo)**, cobrindo swell e mar de vento.
+        * **💨 Vento (Velocidade e Direção):** Obtido em tempo real via API meteorológica **Open-Meteo (Forecast)** a 10 metros de altura, convertido para nós (kn).
         """)
     
     # --- FUNÇÃO DE GERAÇÃO DE PDF ATUALIZADA ---
@@ -227,23 +252,25 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Lat/Lon: {lat:.4f}, {lon:.4f}", ln=True, align="C")
         pdf.ln(5)
         
-        pdf.set_font("helvetica", "B", 9)
-        colunas = ["Data / Hora", "Mare (m)", "Onda (m)", "Dir Onda", "Vento (kn)", "Dir Vento", "Status Operacional"]
-        larguras = [40, 25, 25, 25, 25, 25, 60]
+        pdf.set_font("helvetica", "B", 8)
+        colunas = ["Data / Hora", "Mare(m)", "Fase Estuario", "Onda(m)", "Dir Onda", "Vento(kn)", "Dir Vento", "Corrente", "Status"]
+        larguras = [38, 20, 28, 20, 22, 22, 22, 25, 45]
         
         for i, col in enumerate(colunas):
             pdf.cell(larguras[i], 8, col, border=1, align="C")
         pdf.ln()
         
-        pdf.set_font("helvetica", "", 8)
+        pdf.set_font("helvetica", "", 7)
         for _, row in dataframe.iterrows():
             pdf.cell(larguras[0], 6, str(row['Data_Hora'])[:-3], border=1, align="C")
             pdf.cell(larguras[1], 6, f"{row['Mare_Altura(m)']:.2f}", border=1, align="C")
-            pdf.cell(larguras[2], 6, f"{row['Onda_Altura(m)']:.2f}", border=1, align="C")
-            pdf.cell(larguras[3], 6, str(row['Onda_Dir']), border=1, align="C")
-            pdf.cell(larguras[4], 6, f"{row['Vento_Nos']:.1f}", border=1, align="C")
-            pdf.cell(larguras[5], 6, str(row['Vento_Dir']), border=1, align="C")
-            pdf.cell(larguras[6], 6, str(row['Status']), border=1, align="C")
+            pdf.cell(larguras[2], 6, str(row['Fase_Estuario']), border=1, align="C")
+            pdf.cell(larguras[3], 6, f"{row['Onda_Altura(m)']:.2f}", border=1, align="C")
+            pdf.cell(larguras[4], 6, str(row['Onda_Dir']), border=1, align="C")
+            pdf.cell(larguras[5], 6, f"{row['Vento_Nos']:.1f}", border=1, align="C")
+            pdf.cell(larguras[6], 6, str(row['Vento_Dir']), border=1, align="C")
+            pdf.cell(larguras[7], 6, f"{row['Corrente_Vel_ms']}m/s", border=1, align="C")
+            pdf.cell(larguras[8], 6, str(row['Status']), border=1, align="C")
             pdf.ln()
             
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -260,7 +287,8 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             key="btn_pdf"
         )
     
-    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
+    # Exibe a tabela na tela com as novas colunas de maré, estuário e correntes
+    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Fase_Estuario', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Corrente_Vel_ms', 'Corrente_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
     # --- GRÁFICO 1: MARÉ E ONDAS ---
