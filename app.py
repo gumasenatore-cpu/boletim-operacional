@@ -101,7 +101,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
     url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,sea_level_height_including_tides,ocean_current_velocity,ocean_current_direction&forecast_days=16&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
-    # Requisição segura com tratamento de falhas na API marinha
     try:
         resp_mar = requests.get(url_mar, timeout=10).json()
     except Exception:
@@ -112,7 +111,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
     except Exception:
         resp_vento = {}
 
-    # Define o eixo temporal base (se a API marinha falhar, usa a do vento ou gera horário sintético)
     if 'hourly' in resp_mar and 'time' in resp_mar['hourly']:
         datas = pd.to_datetime(resp_mar['hourly']['time'])
     elif 'hourly' in resp_vento and 'time' in resp_vento['hourly']:
@@ -122,7 +120,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     n_horas = len(datas)
 
-    # Tratamento de Ondas
     if 'hourly' in resp_mar and 'wave_height' in resp_mar['hourly'] and resp_mar['hourly']['wave_height']:
         wave_height = [w if w is not None else 0.5 for w in resp_mar['hourly']['wave_height']]
         wave_dir = [d if d is not None else 0 for d in resp_mar['hourly']['wave_direction']]
@@ -130,7 +127,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
         wave_height = [0.8] * n_horas
         wave_dir = [90] * n_horas
 
-    # Tratamento de Maré / Nível do Mar
     if 'hourly' in resp_mar and 'sea_level_height_including_tides' in resp_mar['hourly'] and any(v is not None for v in resp_mar['hourly']['sea_level_height_including_tides']):
         mare_bruto = resp_mar['hourly']['sea_level_height_including_tides']
         mare_arr = np.array([m if m is not None else 0.0 for m in mare_bruto])
@@ -149,7 +145,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
             0.80
         )
 
-    # Tratamento de Vento
     if 'hourly' in resp_vento and 'wind_speed_10m' in resp_vento['hourly'] and resp_vento['hourly']['wind_speed_10m']:
         wind_speed = np.array([s if s is not None else 10.0 for s in resp_vento['hourly']['wind_speed_10m']]) / 1.852
         wind_dir = [d if d is not None else 0 for d in resp_vento['hourly']['wind_direction_10m']]
@@ -157,7 +152,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
         wind_speed = np.array([10.0] * n_horas)
         wind_dir = [0] * n_horas
 
-    # Tratamento de Correntes
     if 'hourly' in resp_mar and 'ocean_current_velocity' in resp_mar['hourly'] and resp_mar['hourly']['ocean_current_velocity']:
         curr_vel = [c if c is not None else 0.0 for c in resp_mar['hourly']['ocean_current_velocity']]
         curr_dir = resp_mar['hourly']['ocean_current_direction']
@@ -181,7 +175,7 @@ def carregar_dados_nacionais(lat_val, lon_val):
     df['Corrente_Dir'] = pd.Series(curr_dir).apply(graus_para_direcao)
     
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
-    df['Fase_Estuario'] = np.where(delta_mare > 0.01, '🌊 Enchente', np.where(delta_mare < -0.01, '💨 Vazante', '⚖️ Estofamento'))
+    df['Fase_Estuario'] = np.where(delta_mare > 0.01, '🌊 Enchente', np.where(delta_mare < -0.01, '💨 Vazante', '⚖️️ Estofamento'))
     
     return df
 
@@ -368,7 +362,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
                 color_continuous_scale="Blues",
                 direction="clockwise",
                 start_angle=90
-            )format_pdf = FPDF() # (mantido)
+            )
             fig_wave.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
             st.plotly_chart(fig_wave, use_container_width=True, key="rosa_onda")
         else:
