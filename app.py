@@ -13,7 +13,7 @@ try:
     logo = Image.open("logo.png")
     # O parâmetro width controla a largura da imagem em pixels. 
     # Você pode alterar o número 180 para deixar maior ou menor conforme preferir!
-    st.sidebar.image(logo, width=180)
+    st.sidebar.image(logo, width=140)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
