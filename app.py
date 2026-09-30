@@ -8,14 +8,14 @@ from PIL import Image
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
 # 1. Exibe a logo da 4SAS no topo da barra lateral
+# Exibe a logo da 4SAS no topo da barra lateral com tamanho reduzido
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, use_container_width=True)
+    # O parâmetro width controla a largura da imagem em pixels. 
+    # Você pode alterar o número 180 para deixar maior ou menor conforme preferir!
+    st.sidebar.image(logo, width=180)
 except Exception:
     st.sidebar.title("4SAS - Operações")
-
-st.sidebar.markdown("---")
-st.sidebar.header("Localização do Levantamento")
 
 # Escolha do método de entrada de posição
 modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas (Graus e Minutos - DM)"])
