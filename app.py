@@ -82,6 +82,26 @@ if st.sidebar.button("Gerar Boletim"):
         st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Vento_Nos', 'Status', 'Avisos']], 
                      use_container_width=True, hide_index=True)
         
-        st.subheader("Tendência: Altura de Onda vs Nível da Maré")
-        df_grafico = df.set_index('Data_Hora')[['Onda_Altura(m)', 'Mare_Altura(m)']]
-        st.line_chart(df_grafico)
+       st.subheader("Análise Gráfica: Maré vs Ondulação")
+    
+    # Criando um gráfico interativo com Plotly
+    fig = px.line(
+        df, 
+        x='Data_Hora', 
+        y=['Mare_Altura(m)', 'Onda_Altura(m)'],
+        labels={'value': 'Altura (metros)', 'Data_Hora': 'Hora local', 'variable': 'Métrica'},
+        color_discrete_map={
+            'Mare_Altura(m)': '#1E88E5', # Azul marinho para a maré
+            'Onda_Altura(m)': '#FFC107'  # Amarelo/Laranja para a onda
+        }
+    )
+    
+    # Efeitos visuais operacionais
+    # 1. Pinta a área abaixo da linha da maré para simular o volume de água
+    fig.data[0].update(fill='tozeroy', line_width=3)
+    
+    # 2. Transforma a linha da onda em pontilhada para contrastar com a maré
+    fig.data[1].update(line_width=3, line_dash='dot')
+    
+    # Exibe o gráfico interativo na tela
+    st.plotly_chart(fig, use_container_width=True)
