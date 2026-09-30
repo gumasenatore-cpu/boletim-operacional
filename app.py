@@ -10,7 +10,7 @@ st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 # 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, width=180)
+    st.sidebar.image(logo, width=120)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
