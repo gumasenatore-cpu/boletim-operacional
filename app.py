@@ -10,7 +10,7 @@ import os
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# 1. Exibe a logo original na barra lateral (tamanho ajustado para 120)
+# 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
     st.sidebar.image(logo, width=120)
@@ -32,7 +32,7 @@ if modo_pos == "Busca por Nome":
     if termo_busca.strip() != "":
         try:
             url = f"https://geocoding-api.open-meteo.com/v1/search?name={termo_busca}&count=1&language=pt&format=json"
-            resp = requests.get(url).json()
+            resp = requests.get(url, timeout=5).json()
             if "results" in resp and len(resp["results"]) > 0:
                 lat = resp["results"][0]["latitude"]
                 lon = resp["results"][0]["longitude"]
@@ -43,7 +43,7 @@ if modo_pos == "Busca por Nome":
             else:
                 st.sidebar.error("Local não encontrado.")
         except Exception:
-            st.sidebar.error("Erro na busca.")
+            st.sidebar.error("Erro na busca de geolocalização.")
     else:
         st.sidebar.info("Digite um nome de localidade acima.")
         nome_local_exibicao = "Local Personalizado"
@@ -68,7 +68,7 @@ else:
     nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
     st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lat:.4f}")
 
-# Exibe o mapa nativo do Streamlit com a posição selecionada
+# Exibe o mapa nativo do Streamlit
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
 st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
@@ -131,7 +131,6 @@ def graus_para_direcao(deg):
 
 @st.cache_data
 def carregar_dados_nacionais(lat_val, lon_val):
-    # Parâmetros limpios e estáveis para a API Marine
     url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&forecast_days=16&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
@@ -152,7 +151,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
     except Exception:
         pass
 
-    # Eixo temporal
     if 'hourly' in resp_mar and 'time' in resp_mar['hourly']:
         datas = pd.to_datetime(resp_mar['hourly']['time'])
     elif 'hourly' in resp_vento and 'time' in resp_vento['hourly']:
@@ -162,7 +160,7 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     n_horas = len(datas)
 
-    # Tratamento de Vento primeiro (necessário para estimativa dinâmica se ondas falharem)
+    # Vento seguro
     if 'hourly' in resp_vento and 'wind_speed_10m' in resp_vento['hourly'] and resp_vento['hourly']['wind_speed_10m']:
         wind_speed_ms = np.array([s if s is not None else 5.0 for s in resp_vento['hourly']['wind_speed_10m']])
         wind_dir = [d if d is not None else 0 for d in resp_vento['hourly']['wind_direction_10m']]
@@ -172,16 +170,15 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     wind_speed_nos = wind_speed_ms / 0.5144
 
-    # Tratamento de Ondas (com fallback dinâmico baseado no vento se a API marinha falhar)
+    # Ondas com fallback dinâmico robusto baseado no vento real
     if 'hourly' in resp_mar and 'wave_height' in resp_mar['hourly'] and resp_mar['hourly']['wave_height']:
         wave_height = [w if w is not None else 0.5 for w in resp_mar['hourly']['wave_height']]
         wave_dir = [d if d is not None else wind_dir[i] for i, d in enumerate(resp_mar['hourly']['wave_direction'])]
     else:
-        # Estimativa física proporcional ao vento local em vez de número estático fixo
         wave_height = list(np.clip(wind_speed_ms * 0.15 + 0.3, 0.4, 3.5))
         wave_dir = wind_dir
 
-    # Modelo Harmônico de Maré / Nível do Mar Costeiro
+    # Maré harmônica costeira
     horas = np.arange(n_horas)
     omega_m2 = 2 * np.pi / 12.4206
     omega_s2 = 2 * np.pi / 12.0000
@@ -207,7 +204,7 @@ def carregar_dados_nacionais(lat_val, lon_val):
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
-    # Modelo hidrodinâmico estuarino dinâmico
+    # Modelo hidrodinâmico estuarino
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
     velocidade_ms = np.abs(delta_mare) * 1.8
     velocidade_ms = np.clip(velocidade_ms, 0.1, 2.5)
@@ -317,10 +314,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         **3. Fontes e Motores Hidrodinâmicos:**
         * **Mare e Nível do Mar:** Obtido via modelo harmônico e compensação costeira.
         * **Correntes Estuarinas:** Calculadas dinamicamente via gradiente temporal da maré (dh/dt), simulando o escoamento em canais e barras (Enchente e Vazante) em nós (kn).
-        * **Ondas e Ventos:** Modelos em tempo real Open-Marine e Forecast (Open-Meteo).
+        * **Ondas e Ventos:** Modelos em tempo real Open-Marine e Forecast (Open-Meteo) com fallback físico integrado.
         """)
     
-    # Função de PDF com salvamento de estado seguro para evitar recarregamento
     def gerar_pdf(dataframe, local_nome, dias):
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
@@ -357,7 +353,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.output(temp_file.name)
         return temp_file.name
 
-    # Armazena o PDF no session_state para que o botão de download funcione sem apagar o boletim
+    # Gerencia PDF via session_state para estabilidade total
     if 'pdf_path' not in st.session_state or st.sidebar.button("Atualizar Cache PDF"):
         st.session_state['pdf_path'] = gerar_pdf(df, nome_local_exibicao, dias_janela)
 
