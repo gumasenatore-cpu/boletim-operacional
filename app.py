@@ -7,7 +7,7 @@ from PIL import Image
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# 1. Exibe a logo original na barra lateral (com tamanho reduzido)
+# 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
     st.sidebar.image(logo, width=120)
@@ -70,6 +70,11 @@ df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
 st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
+st.sidebar.markdown("---")
+# Seletor dinâmico de 1 a 15 dias para a janela de previsão
+st.sidebar.header("Janela de Previsão")
+dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
+
 # Função auxiliar para converter graus em pontos cardeais
 def graus_para_direcao(deg):
     if pd.isna(deg):
@@ -81,8 +86,9 @@ def graus_para_direcao(deg):
 
 @st.cache_data
 def carregar_dados(lat_val, lon_val):
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&timezone=America%2FSao_Paulo"
-    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&timezone=America%2FSao_Paulo"
+    # Solicitamos uma faixa estendida (ex: 16 dias) para cobrir a escolha máxima do usuário
+    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&forecast_days=16&timezone=America%2FSao_Paulo"
+    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
     resp_mar = requests.get(url_mar).json()
     resp_vento = requests.get(url_vento).json()
@@ -119,7 +125,12 @@ def carregar_dados(lat_val, lon_val):
 
 st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
-    df = carregar_dados(lat, lon)
+    df_completo = carregar_dados(lat, lon)
+    
+    # Filtra o DataFrame de acordo com a quantidade de dias escolhida pelo usuário
+    data_inicio = df_completo['Data_Hora'].min()
+    data_fim = data_inicio + pd.Timedelta(days=dias_janela)
+    df = df_completo[(df_completo['Data_Hora'] >= data_inicio) & (df_completo['Data_Hora'] <= data_fim)].copy()
     
     def regras(row):
         onda = row['Onda_Altura(m)']
@@ -127,14 +138,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         if onda > 2.0 or vento > 20.0:
             return "🔴 SEM OPERAÇÃO (NO-GO)", "Limite crítico excedido"
-        elif (1.5 < onda <= 2.0) or (15.0 <= vento <= 20.0):
+        elif (1.5 < onda <= 2.0) | (15.0 <= vento <= 20.0):
             return "🟡 AVALIAÇÃO TÉCNICA", "Condição limítrofe"
         else:
             return "🟢 FAVORÁVEL", "Dentro da janela"
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    # Exibe a logo2 no topo da página principal antes do título
+    # Exibe a logo2 no topo da página principal
     try:
         logo2 = Image.open("logo2.png")
         st.image(logo2, width=220)
@@ -142,19 +153,15 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pass
 
     st.title("Boletim Meteoceanográfico")
-    st.subheader(f"Previsão Tática para: {nome_local_exibicao}")
+    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias)")
     
     st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
-    st.subheader("Análise Gráfica: Janela Operacional de 4 Dias")
-    
-    data_inicio = df['Data_Hora'].min()
-    data_fim = data_inicio + pd.Timedelta(days=4)
-    df_4dias = df[(df['Data_Hora'] >= data_inicio) & (df['Data_Hora'] <= data_fim)]
+    st.subheader(f"Análise Gráfica: Janela Operacional de {dias_janela} Dias")
     
     fig = px.line(
-        df_4dias, 
+        df, 
         x='Data_Hora', 
         y=['Mare_Altura(m)', 'Onda_Altura(m)'],
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
@@ -163,4 +170,4 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
-    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v4")
+    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_dinamico")
