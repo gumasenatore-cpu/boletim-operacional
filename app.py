@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.express as px
-from datetime import datetime
-from pytides.tide import Tide
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 st.title("🌊 Painel de Operações Hidrográficas (Harmônico)")
@@ -30,21 +28,24 @@ def carregar_dados(lat, lon):
         'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1)
     })
     
-    # 2. Calcula a maré matematicamente usando Fórmulas Harmônicas (Pytides)
-    # Definindo constituintes e coeficientes astronômicos locais
-    tide = Tide(
-        constituents=['M2', 'S2', 'K1', 'O1'], 
-        amplitudes=[0.45, 0.15, 0.20, 0.10], 
-        phases=[120.0, 150.0, 60.0, 40.0]
+    # 2. Cálculo Harmônico Nativo (Simulação baseada nas principais componentes: M2, S2, K1, O1)
+    # Frequências angulares das principais marés oceânicas
+    horas = np.arange(len(datas))
+    omega_m2 = 2 * np.pi / 12.4206  # Principal lunar semidiurna
+    omega_s2 = 2 * np.pi / 12.0000  # Principal solar semidiurna
+    omega_k1 = 2 * np.pi / 23.9345  # Lunar-solar diurna
+    omega_o1 = 2 * np.pi / 25.8193  # Principal lunar diurna
+    
+    # Composição harmônica com amplitudes e fases típicas da costa sudeste
+    mare = (
+        0.45 * np.cos(omega_m2 * horas - 1.2) +
+        0.15 * np.cos(omega_s2 * horas - 0.5) +
+        0.20 * np.cos(omega_k1 * horas - 0.8) +
+        0.10 * np.cos(omega_o1 * horas - 0.3) +
+        0.80  # Nível médio de referência (1.0m)
     )
     
-    alturas_mare = []
-    for dt in datas:
-        altura = tide.at(dt.to_pydatetime())
-        # Soma um nível médio base de 0.8m para ajustar a escala
-        alturas_mare.append(round(float(altura) + 0.8, 2))
-        
-    df['Mare_Altura(m)'] = alturas_mare
+    df['Mare_Altura(m)'] = np.round(mare, 2)
     return df
 
 if st.sidebar.button("Gerar Boletim"):
