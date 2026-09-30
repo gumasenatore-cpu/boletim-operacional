@@ -77,10 +77,11 @@ st.sidebar.markdown("---")
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
-# Novo filtro de horário diurno
+# Filtro de horário diurno e Rumo de Navegação
 st.sidebar.markdown("---")
-st.sidebar.header("Filtros Operacionais")
+st.sidebar.header("Parâmetros Operacionais")
 filtro_diurno = st.sidebar.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
+rumo_embarcacao = st.sidebar.number_input("Rumo de Navegação / Linha (º)", min_value=0, max_value=360, value=90, step=10, help="Direção da proa ou da linha de levantamento hidrográfico")
 
 # Função auxiliar para converter graus em pontos cardeais
 def graus_para_direcao(deg):
@@ -137,22 +138,35 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     data_fim = data_inicio + pd.Timedelta(days=dias_janela)
     df = df_completo[(df_completo['Data_Hora'] >= data_inicio) & (df_completo['Data_Hora'] <= data_fim)].copy()
     
-    # Aplica o filtro de horário diurno se selecionado
     if filtro_diurno:
         df = df[(df['Data_Hora'].dt.hour >= 6) & (df['Data_Hora'].dt.hour <= 18)].copy()
     
-    def regras(row):
+    # Lógica de Regras e Incidência Direcional (Beam Sea / Través)
+    def regras_e_incidencia(row):
         onda = row['Onda_Altura(m)']
         vento = row['Vento_Nos']
+        onda_dir = row['Onda_Dir_Num']
         
-        if onda > 2.0 or vento > 20.0:
-            return "SEM OPERACAO (NO-GO)", "Limite critico excedido"
-        elif (1.5 < onda <= 2.0) | (15.0 <= vento <= 20.0):
-            return "AVALIACAO TECNICA", "Condicao limitrofe"
-        else:
-            return "FAVORAVEL", "Dentro da janela"
+        # Cálculo do ângulo relativo entre a onda e o rumo do navio
+        aviso_direcao = ""
+        if not pd.isna(onda_dir):
+            diff_ang = abs(onda_dir - rumo_embarcacao) % 360
+            if diff_ang > 180:
+                diff_ang = 360 - diff_ang
+            # Se a incidência estiver entre 60º e 120º, é mar de través (lateral)
+            if 60 <= diff_ang <= 120:
+                aviso_direcao = " [Atenção: Mar de Través]"
 
-    df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
+        if onda > 2.0 or vento > 20.0:
+            return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
+        elif (1.5 < onda <= 2.0) | (15.0 <= vento <= 20.0):
+            return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
+        else:
+            status_base = "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA"
+            msg_base = "Dentro da janela" if aviso_direcao == "" else f"Incidência lateral crítica{aviso_direcao}"
+            return status_base, msg_base
+
+    df[['Status', 'Avisos']] = df.apply(regras_e_incidencia, axis=1, result_type='expand')
     
     try:
         logo2 = Image.open("logo2.png")
@@ -161,20 +175,36 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pass
 
     st.title("Boletim Meteoceanográfico")
+    txt_diurno = " (Apenas Diurno)" if filtro_diurno else ""
+    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){txt_diurno} | Rumo: {rumo_embarcacao}º")
     
-    txt_diurno = " (Apenas Período Diurno: 06h - 18h)" if filtro_diurno else ""
-    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){txt_diurno}")
+    # --- PAINEL DE SUMÁRIO EXECUTIVO (KPIs) ---
+    total_horas = len(df)
+    favoraveis = len(df[df['Status'] == "FAVORAVEL"])
+    tecnicas = len(df[df['Status'] == "AVALIACAO TECNICA"])
+    nogo = len(df[df['Status'] == "SEM OPERACAO (NO-GO)"])
     
+    p_fav = (favoraveis / total_horas) * 100 if total_horas > 0 else 0
+    p_tec = (tecnicas / total_horas) * 100 if total_horas > 0 else 0
+    p_nogo = (nogo / total_horas) * 100 if total_horas > 0 else 0
+
+    st.markdown("### 📊 Sumário Executivo da Janela")
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("🟢 Janela Favorável", f"{favoraveis}h ({p_fav:.1f}%)")
+    kpi2.metric("🟡 Avaliação Técnica", f"{tecnicas}h ({p_tec:.1f}%)")
+    kpi3.metric("🔴 Sem Operação (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
+    st.markdown("---")
+
     # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS ---
     with st.expander("ℹ️ Informações e Fontes de Dados Utilizadas neste Boletim"):
         st.markdown("""
         Este painel utiliza motores independentes e APIs meteorológicas oficiais de alta confiabilidade:
-        * **🌊 Maré:** Calculada de forma **nativa via Python (NumPy)** através de modelo harmônico somando as principais componentes da costa brasileira (**M2, S2, K1 e O1**), garantindo independência de tabelas estáticas.
+        * **🌊 Maré:** Calculada de forma **nativa via Python (NumPy)** através de modelo harmônico somando as principais componentes da costa brasileira (**M2, S2, K1 e O1**).
         * **🌊 Onda (Altura e Direção):** Obtida em tempo real via API oficial **Open-Marine (Open-Meteo)**, baseada em modelos oceânicos globais.
         * **💨 Vento (Velocidade e Direção):** Obtida em tempo real via API de previsão do tempo **Open-Meteo (Forecast)**, convertida para nós (kn) a partir de dados a 10 metros de altura.
         """)
     
-    # --- FUNÇÃO DE GERAÇÃO DE PDF ---
+    # --- FUNÇÃO DE GERAÇÃO DE PDF ATUALIZADA ---
     def gerar_pdf(dataframe, local_nome, dias):
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
@@ -182,7 +212,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO OPERACIONAL", ln=True, align="C")
         pdf.set_font("helvetica", "", 11)
-        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Lat/Lon: {lat:.4f}, {lon:.4f}", ln=True, align="C")
+        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Rumo: {rumo_embarcacao}º | Lat/Lon: {lat:.4f}, {lon:.4f}", ln=True, align="C")
         pdf.ln(5)
         
         pdf.set_font("helvetica", "B", 9)
@@ -264,7 +294,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
                 start_angle=90
             )
             fig_wind.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
-            st.plotly_chart(fig_wind, use_container_width=True, key="rosa_vento")
+            st.plotly_chart(fig_wind, use_keyword=True, use_container_width=True, key="rosa_vento")
         else:
             st.info("Sem dados suficientes para a Rosa de Ventos.")
             
