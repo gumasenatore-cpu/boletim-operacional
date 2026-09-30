@@ -66,7 +66,7 @@ else:
     lon = lon_graus + (lon_sinal * (lon_min / 60.0))
     
     nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
-    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lon:.4f}")
+    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lat:.4f}")
 
 # Exibe o mapa nativo do Streamlit com a posição selecionada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
@@ -77,17 +77,16 @@ st.sidebar.markdown("---")
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
-# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ---
+# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ATUALIZADA ---
 st.sidebar.markdown("---")
 st.sidebar.header("Seleção de Sensores")
 lista_sensores_disponiveis = [
     "Ecobatímetro Monofeixe",
     "Ecobatímetro Multifeixe (Multibeam)",
     "Magnetômetro (Rebocado)",
-    "Sonar de Varredura Lateral (Sidescan)",
-    "Perfilador de Sub-Fundo (SBP)",
-    "Sistema Sísmico Monocanal",
-    "Sistema Sísmico Multicanal"
+    "Sidescan + SBP (Integrado Rebocado)",
+    "Sistema Sísmico Monocanal (Rebocado)",
+    "Sistema Sísmico Multicanal (Rebocado)"
 ]
 sensores_selecionados = st.sidebar.multiselect(
     "Selecione os sensores em operação:",
@@ -110,10 +109,9 @@ limites_sensores = {
     "Ecobatímetro Monofeixe": {"vento": 20.0, "onda": 2.0},
     "Ecobatímetro Multifeixe (Multibeam)": {"vento": 18.0, "onda": 1.5},
     "Magnetômetro (Rebocado)": {"vento": 18.0, "onda": 1.5},
-    "Sonar de Varredura Lateral (Sidescan)": {"vento": 18.0, "onda": 1.5},
-    "Perfilador de Sub-Fundo (SBP)": {"vento": 20.0, "onda": 1.8},
-    "Sistema Sísmico Monocanal": {"vento": 15.0, "onda": 1.2},
-    "Sistema Sísmico Multicanal": {"vento": 12.0, "onda": 1.0}
+    "Sidescan + SBP (Integrado Rebocado)": {"vento": 18.0, "onda": 1.5},
+    "Sistema Sísmico Monocanal (Rebocado)": {"vento": 15.0, "onda": 1.2},
+    "Sistema Sísmico Multicanal (Rebocado)": {"vento": 12.0, "onda": 1.0}
 }
 
 # Determina os limites mais restritivos com base nos sensores selecionados
@@ -228,7 +226,13 @@ def carregar_dados_nacionais(lat_val, lon_val):
     return df
 
 st.sidebar.markdown("---")
-if st.sidebar.button("Gerar Boletim Operacional"):
+gerar_clicado = st.sidebar.button("Gerar Boletim Operacional")
+
+# Gerencia o estado na sessão para evitar perda de dados no clique do PDF
+if gerar_clicado:
+    st.session_state['dados_gerados'] = True
+
+if st.session_state.get('dados_gerados', False):
     df_completo = carregar_dados_nacionais(lat, lon)
     
     data_inicio = df_completo['Data_Hora'].min()
@@ -305,8 +309,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         **2. Diretrizes de Operação (Padrões IHO / IMCA):**
         * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll que degradam a acurácia batimétrica.
-        * **Sistemas Rebocados (Magnetômetro / Sidescan / SBP):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion).
-        * **Sistemas Sísmicos (Monocanal / Multicanal):** Altamente restritivos devido ao ruído de vaga (*swell noise*) e esforço mecânico em streamers longos.
+        * **Sistemas Rebocados (Magnetômetro / Sidescan + SBP / Sísmica):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion) e esforço mecânico excessivo.
         
         **3. Fontes e Motores Hidrodinâmicos:**
         * **Mare e Nível do Mar:** Obtido via modelo oceanográfico global (*Sea Level Height including tides*) combinado com compensação harmônica costeira.
