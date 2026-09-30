@@ -3,48 +3,35 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.express as px
-from streamlit_folha import folha
-import folium
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 st.title("🌊 Painel de Operações Hidrográficas (Harmônico)")
 st.markdown("Avaliação de Janela Meteorológica e Maré Harmônica para Lançamento de Equipamentos")
 
-# 1. Configuração de Localidades e Mapa Interativo
+# 1. Configuração de Localidades e Coordenadas
 st.sidebar.header("📍 Localização do Levantamento")
 
 locais_dict = {
     "Barra do Furado, RJ": {"lat": -22.42, "lon": -41.02},
     "Porto do Açu, RJ": {"lat": -21.85, "lon": -41.03},
-    "Bacia de Campos (Offshore)": {"lat": -22.18, "lon": -40.50}
+    "Bacia de Campos (Offshore)": {"lat": -22.18, "lon": -40.50},
+    "Personalizado (Digitar Coordenadas)": {"lat": -22.18, "lon": -41.12}
 }
 
-escolha_local = st.sidebar.selectbox("Selecione a Base ou Clique no Mapa", ["Selecionar Base Pronta"] + list(locais_dict.keys()))
+escolha_local = st.sidebar.selectbox("Selecione a Área", list(locais_dict.keys()))
 
-if escolha_local != "Selecionar Base Pronta":
-    lat_inicial = locais_dict[escolha_local]["lat"]
-    lon_inicial = locais_dict[escolha_local]["lon"]
+if escolha_local == "Personalizado (Digitar Coordenadas)":
+    lat = st.sidebar.number_input("Latitude", value=-22.18, format="%.4f")
+    lon = st.sidebar.number_input("Longitude", value=-41.12, format="%.4f")
 else:
-    lat_inicial = -22.18
-    lon_inicial = -41.12
+    lat = locais_dict[escolha_local]["lat"]
+    lon = locais_dict[escolha_local]["lon"]
+    st.sidebar.info(f"Coordenadas fixas: **{lat}, {lon}**")
 
-st.sidebar.markdown("**Dica:** Clique em qualquer lugar do mapa abaixo para definir o ponto exato da operação.")
-
-# Criando o mapa interativo do Folium na barra lateral
-m = folium.Map(location=[lat_inicial, lon_inicial], zoom_start=8)
-folium.Marker([lat_inicial, lon_inicial], popup="Ponto Selecionado", tooltip="Local da Operação").add_to(m)
-
-# Renderiza o mapa clicável
-mapa_dados = folha(m, height=220, width="100%")
-
-# Captura o clique no mapa, se houver
-if mapa_dados and mapa_dados.get("last_clicked"):
-    lat = mapa_dados["last_clicked"]["lat"]
-    lon = mapa_dados["last_clicked"]["lng"]
-    st.sidebar.success(f"Ponto capturado via mapa!\nLat: {lat:.4f}, Lon: {lon:.4f}")
-else:
-    lat = lat_inicial
-    lon = lon_inicial
+# Exibe o mapa nativo do Streamlit com a posição selecionada
+df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+st.sidebar.markdown("**Posição no Mapa:**")
+st.sidebar.map(df_mapa, zoom=8, height=180)
 
 @st.cache_data
 def carregar_dados(lat_val, lon_val):
@@ -93,7 +80,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    st.subheader(f"Previsão para a Posição (Lat: {lat:.4f}, Lon: {lon:.4f})")
+    st.subheader(f"Previsão para: {escolha_local} (Lat: {lat}, Lon: {lon})")
     st.dataframe(df, use_container_width=True, hide_index=True)
     
     fig = px.line(
