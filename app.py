@@ -6,7 +6,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 st.title("🌊 Painel de Operações Hidrográficas (4SAS)")
-st.markdown("Avaliação de Janela Meteorológica, Direções e Maré Harmônica")
+st.markdown("Avaliação de Janela Meteorológica, Direções Cardinais e Maré Harmônica")
 
 # 1. Configuração de Localidades e Coordenadas
 st.sidebar.header("📍 Localização do Levantamento")
@@ -31,9 +31,17 @@ else:
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
+# Função auxiliar para converter graus em pontos cardeais
+def graus_para_direcao(deg):
+    if pd.isna(deg):
+        return ""
+    direcoes = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", 
+                "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+    val = int((deg / 22.5) + 0.5)
+    return direcoes[val % 16]
+
 @st.cache_data
 def carregar_dados(lat_val, lon_val):
-    # Prazos e direções via Open-Meteo (incluindo wave_direction e wind_direction_10m)
     url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&timezone=America%2FSao_Paulo"
     
@@ -45,10 +53,14 @@ def carregar_dados(lat_val, lon_val):
     df = pd.DataFrame({
         'Data_Hora': datas,
         'Onda_Altura(m)': resp_mar['hourly']['wave_height'],
-        'Onda_Dir(°)': resp_mar['hourly']['wave_direction'],
+        'Onda_Dir_Num': resp_mar['hourly']['wave_direction'],
         'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1),
-        'Vento_Dir(°)': resp_vento['hourly']['wind_direction_10m']
+        'Vento_Dir_Num': resp_vento['hourly']['wind_direction_10m']
     })
+    
+    # Aplica a conversão de graus para direções cardinais
+    df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
+    df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
     # Cálculo Harmônico Nativo de Maré (Componentes M2, S2, K1, O1)
     horas = np.arange(len(datas))
@@ -72,29 +84,24 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
     df = carregar_dados(lat, lon)
     
-    # Novo Motor de Regras com os Limiares do Gustavo
+    # Motor de Regras 4SAS
     def regras(row):
         onda = row['Onda_Altura(m)']
         vento = row['Vento_Nos']
         
-        # Sem operação se onda > 2m ou vento > 20 nós
         if onda > 2.0 or vento > 20.0:
-            return "🔴 SEM OPERAÇÃO (NO-GO)", "Limite crítico excedido (Onda > 2m ou Vento > 20kn)"
-        
-        # Avaliação técnica se onda entre 1.5m e 2m OU vento entre 15 e 20 nós
+            return "🔴 SEM OPERAÇÃO (NO-GO)", "Limite crítico excedido"
         elif (1.5 < onda <= 2.0) or (15.0 <= vento <= 20.0):
-            return "🟡 AVALIAÇÃO TÉCNICA", "Condição limítrofe (Onda 1.5-2m / Vento 15-20kn)"
-        
-        # Caso contrário, favorável
+            return "🟡 AVALIAÇÃO TÉCNICA", "Condição limítrofe"
         else:
-            return "🟢 FAVORÁVEL", "Dentro da janela operacional"
+            return "🟢 FAVORÁVEL", "Dentro da janela"
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
     st.subheader(f"Previsão Tática para: {escolha_local} (Lat: {lat}, Lon: {lon})")
     
-    # Exibe a tabela completa incluindo as direções cardinais/graus
-    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir(°)', 'Vento_Nos', 'Vento_Dir(°)', 'Status', 'Avisos']], 
+    # Exibe a tabela formatada com as direções limpas (ex: ENE, SE, S)
+    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
     st.subheader("Análise Gráfica: Janela Operacional de 4 Dias")
@@ -111,6 +118,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
     
+    fig.data[0].update(line_width=3)
+    fig.data[1].update(line_width=3)
+    
+    st.plotly_chart(fig, use_container_width=True)
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
