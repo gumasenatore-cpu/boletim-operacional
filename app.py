@@ -8,14 +8,37 @@ st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 st.title("🌊 Painel de Operações Hidrográficas (Harmônico)")
 st.markdown("Avaliação de Janela Meteorológica e Maré Harmônica para Lançamento de Equipamentos")
 
-st.sidebar.header("Configuração")
-local = st.sidebar.selectbox("Área de Navegação", ["Barra do Furado, RJ", "Porto do Açu, RJ"])
+# 1. Configuração de Localidades e Coordenadas
+st.sidebar.header("📍 Localização do Levantamento")
+
+# Dicionário com as bases operacionais padrão da 4SAS e opção customizada
+locais_dict = {
+    "Barra do Furado, RJ": {"lat": -22.42, "lon": -41.02},
+    "Porto do Açu, RJ": {"lat": -21.85, "lon": -41.03},
+    "Bacia de Campos (Offshore)": {"lat": -22.18, "lon": -40.50},
+    "Personalizado (Digitar Coordenadas)": {"lat": -22.18, "lon": -41.12}
+}
+
+escolha_local = st.sidebar.selectbox("Selecione a Área", list(locais_dict.keys()))
+
+if escolha_local == "Personalizado (Digitar Coordenadas)":
+    lat = st.sidebar.number_input("Latitude", value=-22.18, format="%.4f")
+    lon = st.sidebar.number_input("Longitude", value=-41.12, format="%.4f")
+else:
+    lat = locais_dict[escolha_local]["lat"]
+    lon = locais_dict[escolha_local]["lon"]
+    st.sidebar.info(f"Coordenadas fixas: **{lat}, {lon}**")
+
+# Exibe um mapa interativo em miniatura na barra lateral com a posição escolhida
+df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+st.sidebar.markdown("**Visualização da Posição:**")
+st.sidebar.map(df_mapa, zoom=8, height=180)
 
 @st.cache_data
-def carregar_dados(lat, lon):
-    # 1. Pega os dados de vento e onda da Open-Meteo
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly=wave_height&timezone=America%2FSao_Paulo"
-    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=wind_speed_10m&timezone=America%2FSao_Paulo"
+def carregar_dados(lat_val, lon_val):
+    # Pega os dados de vento e onda da Open-Meteo usando as coordenadas dinâmicas
+    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height&timezone=America%2FSao_Paulo"
+    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m&timezone=America%2FSao_Paulo"
     
     resp_mar = requests.get(url_mar).json()
     resp_vento = requests.get(url_vento).json()
@@ -28,28 +51,26 @@ def carregar_dados(lat, lon):
         'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1)
     })
     
-    # 2. Cálculo Harmônico Nativo (Simulação baseada nas principais componentes: M2, S2, K1, O1)
-    # Frequências angulares das principais marés oceânicas
+    # Cálculo Harmônico Nativo (Componentes M2, S2, K1, O1)
     horas = np.arange(len(datas))
-    omega_m2 = 2 * np.pi / 12.4206  # Principal lunar semidiurna
-    omega_s2 = 2 * np.pi / 12.0000  # Principal solar semidiurna
-    omega_k1 = 2 * np.pi / 23.9345  # Lunar-solar diurna
-    omega_o1 = 2 * np.pi / 25.8193  # Principal lunar diurna
+    omega_m2 = 2 * np.pi / 12.4206
+    omega_s2 = 2 * np.pi / 12.0000
+    omega_k1 = 2 * np.pi / 23.9345
+    omega_o1 = 2 * np.pi / 25.8193
     
-    # Composição harmônica com amplitudes e fases típicas da costa sudeste
     mare = (
         0.45 * np.cos(omega_m2 * horas - 1.2) +
         0.15 * np.cos(omega_s2 * horas - 0.5) +
         0.20 * np.cos(omega_k1 * horas - 0.8) +
         0.10 * np.cos(omega_o1 * horas - 0.3) +
-        0.80  # Nível médio de referência (1.0m)
+        0.80
     )
     
     df['Mare_Altura(m)'] = np.round(mare, 2)
     return df
 
-if st.sidebar.button("Gerar Boletim"):
-    lat, lon = -22.18, -41.12
+st.sidebar.markdown("---")
+if st.sidebar.button("Gerar Boletim Operacional"):
     df = carregar_dados(lat, lon)
     
     def regras(row):
@@ -61,7 +82,7 @@ if st.sidebar.button("Gerar Boletim"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    st.subheader(f"Previsão Harmônica: {local}")
+    st.subheader(f"Previsão para: {escolha_local} (Lat: {lat}, Lon: {lon})")
     st.dataframe(df, use_container_width=True, hide_index=True)
     
     fig = px.line(
