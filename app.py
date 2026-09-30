@@ -5,8 +5,8 @@ import requests
 import plotly.express as px
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
-st.title("🌊 Painel de Operações Hidrográficas (Harmônico)")
-st.markdown("Avaliação de Janela Meteorológica e Maré Harmônica para Lançamento de Equipamentos")
+st.title("🌊 Painel de Operações Hidrográficas (4SAS)")
+st.markdown("Avaliação de Janela Meteorológica, Direções e Maré Harmônica")
 
 # 1. Configuração de Localidades e Coordenadas
 st.sidebar.header("📍 Localização do Levantamento")
@@ -33,8 +33,9 @@ st.sidebar.map(df_mapa, zoom=8, height=180)
 
 @st.cache_data
 def carregar_dados(lat_val, lon_val):
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height&timezone=America%2FSao_Paulo"
-    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m&timezone=America%2FSao_Paulo"
+    # Prazos e direções via Open-Meteo (incluindo wave_direction e wind_direction_10m)
+    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&timezone=America%2FSao_Paulo"
+    url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&timezone=America%2FSao_Paulo"
     
     resp_mar = requests.get(url_mar).json()
     resp_vento = requests.get(url_vento).json()
@@ -44,10 +45,12 @@ def carregar_dados(lat_val, lon_val):
     df = pd.DataFrame({
         'Data_Hora': datas,
         'Onda_Altura(m)': resp_mar['hourly']['wave_height'],
-        'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1)
+        'Onda_Dir(°)': resp_mar['hourly']['wave_direction'],
+        'Vento_Nos': (np.array(resp_vento['hourly']['wind_speed_10m']) / 1.852).round(1),
+        'Vento_Dir(°)': resp_vento['hourly']['wind_direction_10m']
     })
     
-    # Cálculo Harmônico Nativo (Componentes M2, S2, K1, O1)
+    # Cálculo Harmônico Nativo de Maré (Componentes M2, S2, K1, O1)
     horas = np.arange(len(datas))
     omega_m2 = 2 * np.pi / 12.4206
     omega_s2 = 2 * np.pi / 12.0000
@@ -69,23 +72,34 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
     df = carregar_dados(lat, lon)
     
+    # Novo Motor de Regras com os Limiares do Gustavo
     def regras(row):
-        if row['Onda_Altura(m)'] > 1.5 and row['Mare_Altura(m)'] < 0.6:
-            return "🔴 ALTO RISCO", "Risco p/ reboque"
-        elif row['Vento_Nos'] > 15:
-            return "🟡 ATENÇÃO", "Deriva alta"
-        return "🟢 NORMAL", "Janela favorável"
+        onda = row['Onda_Altura(m)']
+        vento = row['Vento_Nos']
+        
+        # Sem operação se onda > 2m ou vento > 20 nós
+        if onda > 2.0 or vento > 20.0:
+            return "🔴 SEM OPERAÇÃO (NO-GO)", "Limite crítico excedido (Onda > 2m ou Vento > 20kn)"
+        
+        # Avaliação técnica se onda entre 1.5m e 2m OU vento entre 15 e 20 nós
+        elif (1.5 < onda <= 2.0) or (15.0 <= vento <= 20.0):
+            return "🟡 AVALIAÇÃO TÉCNICA", "Condição limítrofe (Onda 1.5-2m / Vento 15-20kn)"
+        
+        # Caso contrário, favorável
+        else:
+            return "🟢 FAVORÁVEL", "Dentro da janela operacional"
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    st.subheader(f"Previsão para: {escolha_local} (Lat: {lat}, Lon: {lon})")
+    st.subheader(f"Previsão Tática para: {escolha_local} (Lat: {lat}, Lon: {lon})")
     
-    # Exibe a tabela completa de dados
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    # Exibe a tabela completa incluindo as direções cardinais/graus
+    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir(°)', 'Vento_Nos', 'Vento_Dir(°)', 'Status', 'Avisos']], 
+                 use_container_width=True, hide_index=True)
     
     st.subheader("Análise Gráfica: Janela Operacional de 4 Dias")
     
-    # FILTRO DE 4 DIAS (96 horas a partir do início da previsão)
+    # Filtro de 4 dias (96 horas)
     data_inicio = df['Data_Hora'].min()
     data_fim = data_inicio + pd.Timedelta(days=4)
     df_4dias = df[(df['Data_Hora'] >= data_inicio) & (df['Data_Hora'] <= data_fim)]
@@ -97,7 +111,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
     
-    # Ajuste visual para destacar as linhas no gráfico de 4 dias
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
