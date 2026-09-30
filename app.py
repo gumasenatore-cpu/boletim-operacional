@@ -10,7 +10,7 @@ st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 # 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, width=120)
+    st.sidebar.image(logo, width=180)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
@@ -71,7 +71,6 @@ st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
 st.sidebar.markdown("---")
-# Seletor dinâmico de 1 a 15 dias para a janela de previsão
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
@@ -86,7 +85,6 @@ def graus_para_direcao(deg):
 
 @st.cache_data
 def carregar_dados(lat_val, lon_val):
-    # Solicitamos uma faixa estendida (ex: 16 dias) para cobrir a escolha máxima do usuário
     url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction&forecast_days=16&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
@@ -127,7 +125,6 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
     df_completo = carregar_dados(lat, lon)
     
-    # Filtra o DataFrame de acordo com a quantidade de dias escolhida pelo usuário
     data_inicio = df_completo['Data_Hora'].min()
     data_fim = data_inicio + pd.Timedelta(days=dias_janela)
     df = df_completo[(df_completo['Data_Hora'] >= data_inicio) & (df_completo['Data_Hora'] <= data_fim)].copy()
@@ -145,7 +142,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    # Exibe a logo2 no topo da página principal
     try:
         logo2 = Image.open("logo2.png")
         st.image(logo2, width=220)
@@ -158,7 +154,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
     
-    st.subheader(f"Análise Gráfica: Janela Operacional de {dias_janela} Dias")
+    st.subheader(f"Análise Gráfica Temporal: Janela de {dias_janela} Dias")
     
     fig = px.line(
         df, 
@@ -170,4 +166,48 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
-    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_dinamico")
+    st.plotly_chart(fig, use_container_width=True, key="grafico_temporal_v4")
+    
+    # --- SEÇÃO DE ROSAS (VENTO E ONDA) ---
+    st.markdown("---")
+    st.subheader("🧭 Análise Direcional (Rosas de Vento e Onda)")
+    
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        st.markdown("**Rosa de Ventos (Frequência por Direção e Intensidade)**")
+        # Prepara os dados para a rosa de ventos polar
+        df_vento_clean = df.dropna(subset=['Vento_Dir', 'Vento_Nos'])
+        if not df_vento_clean.empty:
+            fig_wind = px.bar_polar(
+                df_vento_clean, 
+                r="Vento_Nos", 
+                theta="Vento_Dir", 
+                color="Vento_Nos",
+                color_continuous_scale="Teal",
+                direction="clockwise",
+                start_angle=90
+            )
+            fig_wind.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig_wind, use_container_width=True, key="rosa_vento")
+        else:
+            st.info("Sem dados suficientes para a Rosa de Ventos.")
+            
+    with col_r2:
+        st.markdown("**Rosa de Ondas / Swell (Altura por Direção)**")
+        # Prepara os dados para a rosa de ondas polar
+        df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Altura(m)'])
+        if not df_onda_clean.empty:
+            fig_wave = px.bar_polar(
+                df_onda_clean, 
+                r="Onda_Altura(m)", 
+                theta="Onda_Dir", 
+                color="Onda_Altura(m)",
+                color_continuous_scale="Blues",
+                direction="clockwise",
+                start_angle=90
+            )
+            fig_wave.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig_wave, use_container_width=True, key="rosa_onda")
+        else:
+            st.info("Sem dados suficientes para a Rosa de Ondas.")
