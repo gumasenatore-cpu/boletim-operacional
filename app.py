@@ -7,15 +7,15 @@ from PIL import Image
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# 1. Exibe a logo da 4SAS no topo da barra lateral
-# Exibe a logo da 4SAS no topo da barra lateral com tamanho reduzido
+# 1. Exibe a logo original na barra lateral (com tamanho reduzido)
 try:
     logo = Image.open("logo.png")
-    # O parâmetro width controla a largura da imagem em pixels. 
-    # Você pode alterar o número 180 para deixar maior ou menor conforme preferir!
-    st.sidebar.image(logo, width=120)
+    st.sidebar.image(logo, width=180)
 except Exception:
     st.sidebar.title("4SAS - Operações")
+
+st.sidebar.markdown("---")
+st.sidebar.header("Localização do Levantamento")
 
 # Escolha do método de entrada de posição
 modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas (Graus e Minutos - DM)"])
@@ -24,7 +24,6 @@ lat, lon = -22.42, -41.02  # Padrão inicial
 nome_local_exibicao = "Barra do Furado, RJ"
 
 if modo_pos == "Busca por Nome":
-    # Campo iniciado vazio conforme solicitado
     termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Porto do Açu)", value="")
     
     if termo_busca.strip() != "":
@@ -49,7 +48,6 @@ else:
     st.sidebar.markdown("**Insira as Coordenadas (DM):**")
     st.sidebar.markdown("Ex: Lat: -22 e 25.2' | Lon: -41 e 1.2'")
     
-    # Entradas em Graus e Minutos Decimais
     col1, col2 = st.sidebar.columns(2)
     with col1:
         lat_graus = st.number_input("Lat Graus", value=-22, step=1)
@@ -58,8 +56,6 @@ else:
         lon_graus = st.number_input("Lon Graus", value=-41, step=1)
         lon_min = st.number_input("Lon Minutos", value=1.20, format="%.2f", step=0.01)
     
-    # Conversão de Graus e Minutos Decimais (DM) para Graus Decimais (Decimal Degrees)
-    # Lógica considerando sinais negativos para o hemisfério sul/oeste
     lat_sinal = -1 if lat_graus <= 0 else 1
     lon_sinal = -1 if lon_graus <= 0 else 1
     
@@ -104,7 +100,6 @@ def carregar_dados(lat_val, lon_val):
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
-    # Cálculo Harmônico Nativo de Maré (Componentes M2, S2, K1, O1)
     horas = np.arange(len(datas))
     omega_m2 = 2 * np.pi / 12.4206
     omega_s2 = 2 * np.pi / 12.0000
@@ -139,6 +134,13 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
+    # Exibe a logo2 no topo da página principal antes do título
+    try:
+        logo2 = Image.open("logo2.png")
+        st.image(logo2, width=220)
+    except Exception:
+        pass
+
     st.title("Boletim Meteoceanográfico")
     st.subheader(f"Previsão Tática para: {nome_local_exibicao}")
     
@@ -161,4 +163,4 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
-    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v3")
+    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v4")
