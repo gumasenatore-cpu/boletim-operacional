@@ -28,9 +28,7 @@ else:
     lon = locais_dict[escolha_local]["lon"]
     st.sidebar.info(f"Coordenadas fixas: **{lat}, {lon}**")
 
-# Exibe o mapa nativo do Streamlit com a posição selecionada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
 
 @st.cache_data
@@ -81,12 +79,26 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
     st.subheader(f"Previsão para: {escolha_local} (Lat: {lat}, Lon: {lon})")
+    
+    # Exibe a tabela completa de dados
     st.dataframe(df, use_container_width=True, hide_index=True)
     
+    st.subheader("Análise Gráfica: Janela Operacional de 4 Dias")
+    
+    # FILTRO DE 4 DIAS (96 horas a partir do início da previsão)
+    data_inicio = df['Data_Hora'].min()
+    data_fim = data_inicio + pd.Timedelta(days=4)
+    df_4dias = df[(df['Data_Hora'] >= data_inicio) & (df['Data_Hora'] <= data_fim)]
+    
     fig = px.line(
-        df, 
+        df_4dias, 
         x='Data_Hora', 
         y=['Mare_Altura(m)', 'Onda_Altura(m)'],
         labels={'value': 'Altura (m)', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
+    
+    # Ajuste visual para destacar as linhas no gráfico de 4 dias
+    fig.data[0].update(line_width=3)
+    fig.data[1].update(line_width=3)
+    
     st.plotly_chart(fig, use_container_width=True)
