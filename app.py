@@ -175,7 +175,7 @@ def carregar_dados_nacionais(lat_val, lon_val):
     df['Corrente_Dir'] = pd.Series(curr_dir).apply(graus_para_direcao)
     
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
-    df['Fase_Estuario'] = np.where(delta_mare > 0.01, '🌊 Enchente', np.where(delta_mare < -0.01, '💨 Vazante', '⚖️️ Estofamento'))
+    df['Fase_Estuario'] = np.where(delta_mare > 0.01, '🌊 Enchente', np.where(delta_mare < -0.01, '💨 Vazante', '⚖ Estofamento'))
     
     return df
 
@@ -201,7 +201,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             if diff_ang > 180:
                 diff_ang = 360 - diff_ang
             if 60 <= diff_ang <= 120:
-                aviso_direcao = " [Atenção: Mar de Través]"
+                aviso_direcao = " [Atencao: Mar de Traves]"
 
         if onda > 2.0 or vento > 20.0:
             return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
@@ -209,7 +209,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
         else:
             status_base = "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA"
-            msg_base = "Dentro da janela" if aviso_direcao == "" else f"Incidência lateral crítica{aviso_direcao}"
+            msg_base = "Dentro da janela" if aviso_direcao == "" else f"Incidencia lateral critica{aviso_direcao}"
             return status_base, msg_base
 
     df[['Status', 'Avisos']] = df.apply(regras_e_incidencia, axis=1, result_type='expand')
@@ -224,9 +224,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     txt_detalhes = []
     if filtro_diurno:
-        txt_detalhes.append("Período Diurno (06h - 18h)")
+        txt_detalhes.append("Periodo Diurno (06h - 18h)")
     if ativar_rumo_critico:
-        txt_detalhes.append(f"Heading Crítico: {rumo_embarcacao}º")
+        txt_detalhes.append(f"Heading Critico: {rumo_embarcacao}º")
     
     sub_txt = " | ".join(txt_detalhes)
     sub_str = f" ({sub_txt})" if sub_txt else ""
@@ -258,6 +258,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         * **💨 Vento (Velocidade e Direção):** Obtido em tempo real via API meteorológica **Open-Meteo (Forecast)** a 10 metros de altura, convertido para nós (kn).
         """)
     
+    # Função PDF limpa de emojis para evitar erros de codificação nativa
     def gerar_pdf(dataframe, local_nome, dias):
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
@@ -278,15 +279,19 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         pdf.set_font("helvetica", "", 7)
         for _, row in dataframe.iterrows():
+            # Remove emojis para evitar FPDFUnicodeEncodingException
+            fase_limpa = str(row['Fase_Estuario']).replace('🌊 ', '').replace('💨 ', '').replace('⚖ ', '')
+            status_limpo = str(row['Status'])
+            
             pdf.cell(larguras[0], 6, str(row['Data_Hora'])[:-3], border=1, align="C")
             pdf.cell(larguras[1], 6, f"{row['Mare_Altura(m)']:.2f}", border=1, align="C")
-            pdf.cell(larguras[2], 6, str(row['Fase_Estuario']), border=1, align="C")
+            pdf.cell(larguras[2], 6, fase_limpa, border=1, align="C")
             pdf.cell(larguras[3], 6, f"{row['Onda_Altura(m)']:.2f}", border=1, align="C")
             pdf.cell(larguras[4], 6, str(row['Onda_Dir']), border=1, align="C")
             pdf.cell(larguras[5], 6, f"{row['Vento_Nos']:.1f}", border=1, align="C")
             pdf.cell(larguras[6], 6, str(row['Vento_Dir']), border=1, align="C")
             pdf.cell(larguras[7], 6, f"{row['Corrente_Vel_ms']}m/s", border=1, align="C")
-            pdf.cell(larguras[8], 6, str(row['Status']), border=1, align="C")
+            pdf.cell(larguras[8], 6, status_limpo, border=1, align="C")
             pdf.ln()
             
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
