@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-
+import plotly.express as px
 # 1. Configuração visual da página
 st.set_page_config(page_title="Boletim Operacional", layout="wide")
 st.title("🌊 Painel de Operações Hidrográficas")
