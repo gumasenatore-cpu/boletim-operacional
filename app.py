@@ -77,6 +77,24 @@ st.sidebar.markdown("---")
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
+# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ---
+st.sidebar.markdown("---")
+st.sidebar.header("Seleção de Sensores")
+lista_sensores_disponiveis = [
+    "Ecobatímetro Monofeixe",
+    "Ecobatímetro Multifeixe (Multibeam)",
+    "Magnetômetro (Rebocado)",
+    "Sonar de Varredura Lateral (Sidescan)",
+    "Perfilador de Sub-Fundo (SBP)",
+    "Sistema Sísmico Monocanal",
+    "Sistema Sísmico Multicanal"
+]
+sensores_selecionados = st.sidebar.multiselect(
+    "Selecione os sensores em operação:",
+    options=lista_sensores_disponiveis,
+    default=["Ecobatímetro Monofeixe"]
+)
+
 # Parâmetros Operacionais Opcionais
 st.sidebar.markdown("---")
 st.sidebar.header("Parâmetros Opcionais")
@@ -86,6 +104,25 @@ ativar_rumo_critico = st.sidebar.checkbox("Checar Rumo Crítico / Linha Específ
 rumo_embarcacao = 0
 if ativar_rumo_critico:
     rumo_embarcacao = st.sidebar.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
+
+# Dicionário de Limites Operacionais por Tipo de Sensor (Vento em nós, Onda em metros)
+limites_sensores = {
+    "Ecobatímetro Monofeixe": {"vento": 20.0, "onda": 2.0},
+    "Ecobatímetro Multifeixe (Multibeam)": {"vento": 18.0, "onda": 1.5},
+    "Magnetômetro (Rebocado)": {"vento": 18.0, "onda": 1.5},
+    "Sonar de Varredura Lateral (Sidescan)": {"vento": 18.0, "onda": 1.5},
+    "Perfilador de Sub-Fundo (SBP)": {"vento": 20.0, "onda": 1.8},
+    "Sistema Sísmico Monocanal": {"vento": 15.0, "onda": 1.2},
+    "Sistema Sísmico Multicanal": {"vento": 12.0, "onda": 1.0}
+}
+
+# Determina os limites mais restritivos com base nos sensores selecionados
+if sensores_selecionados:
+    limite_vento_ativo = min([limites_sensores[s]["vento"] for s in sensores_selecionados])
+    limite_onda_ativo = min([limites_sensores[s]["onda"] for s in sensores_selecionados])
+else:
+    limite_vento_ativo = 20.0
+    limite_onda_ativo = 2.0
 
 # Função auxiliar para converter graus em pontos cardeais
 def graus_para_direcao(deg):
@@ -164,28 +201,26 @@ def carregar_dados_nacionais(lat_val, lon_val):
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
-    # --- MODELO HIDRODINÂMICO ESTUARINO DINÂMICO ---
+    # Modelo hidrodinâmico estuarino dinâmico
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
-    
-    # Velocidade em m/s e conversão para nós (1 nó = 0.5144 m/s ou m/s / 0.5144)
     velocidade_ms = np.abs(delta_mare) * 1.8
     velocidade_ms = np.clip(velocidade_ms, 0.1, 2.5)
     
     df['Corrente_Vel_ms'] = np.round(velocidade_ms, 2)
-    df['Corrente_Vel_Nos'] = np.round(velocidade_ms / 0.5144, 1) # Conversão para nós
+    df['Corrente_Vel_Nos'] = np.round(velocidade_ms / 0.5144, 1)
     
     fases = []
     direcoes_corrente = []
     
     for dm in delta_mare:
         if dm > 0.01:
-            fases.append('🌊 Enchente')
+            fases.append('Enchente')
             direcoes_corrente.append('NE')
         elif dm < -0.01:
-            fases.append('💨 Vazante')
+            fases.append('Vazante')
             direcoes_corrente.append('SE')
         else:
-            fases.append('⚖ Estofamento')
+            fases.append('Estofamento')
             direcoes_corrente.append('-')
             
     df['Fase_Estuario'] = fases
@@ -217,9 +252,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             if 60 <= diff_ang <= 120:
                 aviso_direcao = " [Atencao: Mar de Traves]"
 
-        if onda > 2.0 or vento > 20.0:
+        # Regras baseadas nos limiares dinâmicos dos sensores selecionados
+        if onda > limite_onda_ativo or vento > limite_vento_ativo:
             return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
-        elif (1.5 < onda <= 2.0) | (15.0 <= vento <= 20.0):
+        elif (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo) | (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo):
             return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
         else:
             status_base = "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA"
@@ -246,6 +282,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     sub_str = f" ({sub_txt})" if sub_txt else ""
     
     st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){sub_str}")
+    st.markdown(f"**Sensores Ativos na Campanha:** {', '.join(sensores_selecionados) if sensores_selecionados5 else 'Nenhum'} | **Limiar Aplicado:** Vento <= {limite_vento_ativo} kn | Onda <= {limite_onda_ativo} m")
     
     total_horas = len(df)
     favoraveis = len(df[df['Status'] == "FAVORAVEL"])
@@ -256,21 +293,28 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     p_tec = (tecnicas / total_horas) * 100 if total_horas > 0 else 0
     p_nogo = (nogo / total_horas) * 100 if total_horas > 0 else 0
 
-    st.markdown("### 📊 Sumário Executivo da Janela")
+    st.markdown("### Sumario Executivo da Janela")
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("🟢 Janela Favorável", f"{favoraveis}h ({p_fav:.1f}%)")
-    kpi2.metric("🟡 Avaliação Técnica", f"{tecnicas}h ({p_tec:.1f}%)")
-    kpi3.metric("🔴 Sem Operação (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
+    kpi1.metric("Janela Favoravel", f"{favoraveis}h ({p_fav:.1f}%)")
+    kpi2.metric("Avaliacao Tecnica", f"{tecnicas}h ({p_tec:.1f}%)")
+    kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
     st.markdown("---")
 
-    # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS DETALHADO E TÉCNICO ---
-    with st.expander("ℹ️ Informações e Fontes de Dados Nacionais Utilizadas"):
+    # --- BOTÃO EXPANSÍVEL DE DIRETRIZES E FONTES DE DADOS ---
+    with st.expander("Informacoes Tecnicas, Fontes de Dados e Diretrizes de Sensores"):
         st.markdown("""
-        Este painel integra modelos numéricos globais oficiais e um **motor hidrodinâmico estuarino proprietário da 4SAS** para garantir máxima confiabilidade em todo o litoral brasileiro:
-        * **🌊 Maré e Nível do Mar:** Obtido via modelo oceanográfico global de maré (*Sea Level Height including tides*) combinado com compensação harmônica de alta precisão costeira.
-        * **🔄 Corrente Estuarinas e de Canais (Física Hidrodinâmica):** Calculada dinamicamente através do gradiente temporal do nível da maré ($dh/dt$). Diferente de modelos globais de baixa resolução que atenuam correntes em estuários, este motor captura a aceleração real do escoamento durante as fases de *Enchente* (entrada na baía/canal) e *Vazante* (escoamento para mar aberto), apresentada em nós (kn) e metros por segundo (m/s).
-        * **🌊 Onda (Altura e Direção):** Obtida em tempo real via API oficial **Open-Marine (Open-Meteo)**, cobrindo swell e mar de vento.
-        * **💨 Vento (Velocidade e Direção):** Obtido em tempo real via API meteorológica **Open-Meteo (Forecast)** a 10 metros de altura, convertido para nós (kn).
+        **1. Hierarquia de Limites por Sensor:**
+        O limite operacional da embarcação é ditado pelo sensor mais sensível em operação na campanha. O sistema avalia automaticamente o conjunto de sensores selecionados e aplica o limiar mais restritivo.
+        
+        **2. Diretrizes de Operação (Padrões IHO / IMCA):**
+        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll que degradam a acurácia batimétrica.
+        * **Sistemas Rebocados (Magnetômetro / Sidescan / SBP):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion).
+        * **Sistemas Sísmicos (Monocanal / Multicanal):** Altamente restritivos devido ao ruído de vaga (*swell noise*) e esforço mecânico em streamers longos.
+        
+        **3. Fontes e Motores Hidrodinâmicos:**
+        * **Mare e Nível do Mar:** Obtido via modelo oceanográfico global (*Sea Level Height including tides*) combinado com compensação harmônica costeira.
+        * **Correntes Estuarinas:** Calculadas dinamicamente via gradiente temporal da maré (dh/dt), simulando o escoamento em canais e barras (Enchente e Vazante) em nós (kn).
+        * **Ondas e Ventos:** Modelos em tempo real Open-Marine e Forecast (Open-Meteo).
         """)
     
     def gerar_pdf(dataframe, local_nome, dias):
@@ -279,9 +323,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.set_font("helvetica", "B", 16)
         
         pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO OPERACIONAL", ln=True, align="C")
-        pdf.set_font("helvetica", "", 11)
-        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Lat/Lon: {lat:.4f}, {lon:.4f}", ln=True, align="C")
-        pdf.ln(5)
+        pdf.set_font("helvetica", "", 10)
+        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Sensores: {', '.join(sensores_selecionados)}", ln=True, align="C")
+        pdf.cell(0, 6, f"Limiar Aplicado: Vento <= {limite_vento_ativo} kn | Onda <= {limite_onda_ativo} m", ln=True, align="C")
+        pdf.ln(4)
         
         pdf.set_font("helvetica", "B", 8)
         colunas = ["Data / Hora", "Mare(m)", "Fase Estuario", "Onda(m)", "Dir Onda", "Vento(kn)", "Dir Vento", "Corrente", "Status"]
@@ -293,18 +338,15 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         pdf.set_font("helvetica", "", 7)
         for _, row in dataframe.iterrows():
-            fase_limpa = str(row['Fase_Estuario']).replace('🌊 ', '').replace('💨 ', '').replace('⚖ ', '')
-            status_limpo = str(row['Status'])
-            
             pdf.cell(larguras[0], 6, str(row['Data_Hora'])[:-3], border=1, align="C")
             pdf.cell(larguras[1], 6, f"{row['Mare_Altura(m)']:.2f}", border=1, align="C")
-            pdf.cell(larguras[2], 6, fase_limpa, border=1, align="C")
+            pdf.cell(larguras[2], 6, str(row['Fase_Estuario']), border=1, align="C")
             pdf.cell(larguras[3], 6, f"{row['Onda_Altura(m)']:.2f}", border=1, align="C")
             pdf.cell(larguras[4], 6, str(row['Onda_Dir']), border=1, align="C")
             pdf.cell(larguras[5], 6, f"{row['Vento_Nos']:.1f}", border=1, align="C")
             pdf.cell(larguras[6], 6, str(row['Vento_Dir']), border=1, align="C")
             pdf.cell(larguras[7], 6, f"{row['Corrente_Vel_Nos']} kn ({row['Corrente_Dir']})", border=1, align="C")
-            pdf.cell(larguras[8], 6, status_limpo, border=1, align="C")
+            pdf.cell(larguras[8], 6, str(row['Status']), border=1, align="C")
             pdf.ln()
             
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -314,14 +356,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     pdf_path = gerar_pdf(df, nome_local_exibicao, dias_janela)
     with open(pdf_path, "rb") as pdf_file:
         st.download_button(
-            label="📄 Baixar Boletim em PDF",
+            label="Baixar Boletim em PDF",
             data=pdf_file,
             file_name="boletim_meteo_4sas.pdf",
             mime="application/pdf",
             key="btn_pdf"
         )
     
-    # Exibe na tabela a velocidade em nós e m/s para total clareza
+    # Exibe a tabela na tela
     df_exibicao = df[['Data_Hora', 'Mare_Altura(m)', 'Fase_Estuario', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir']].copy()
     df_exibicao['Corrente'] = df['Corrente_Vel_Nos'].astype(str) + " kn (" + df['Corrente_Dir'] + ")"
     df_exibicao['Status'] = df['Status']
@@ -329,7 +371,8 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     
-    st.subheader(f"Análise Temporal (Maré e Altura de Onda)")
+    # --- GRÁFICO 1: MARÉ E ONDAS ---
+    st.subheader("Análise Temporal (Maré e Altura de Onda)")
     fig_geral = px.line(
         df, 
         x='Data_Hora', 
@@ -340,7 +383,20 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig_geral.data[1].update(line_width=3)
     st.plotly_chart(fig_geral, use_container_width=True, key="grafico_temporal_geral")
     
-    st.subheader(f"Análise Temporal de Vento (Velocidade)")
+    # --- GRÁFICO 2: CORRENTES E MARÉ (NOVO) ---
+    st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
+    fig_corrente = px.line(
+        df, 
+        x='Data_Hora', 
+        y=['Mare_Altura(m)', 'Corrente_Vel_Nos'],
+        labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
+    )
+    fig_corrente.data[0].update(line_width=3, name="Nível da Maré (m)")
+    fig_corrente.data[1].update(line_width=3, name="Velocidade da Corrente (kn)")
+    st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
+
+    # --- GRÁFICO 3: VENTO TEMPORAL ---
+    st.subheader("Análise Temporal de Vento (Velocidade)")
     fig_vento_temp = px.line(
         df, 
         x='Data_Hora', 
@@ -350,8 +406,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig_vento_temp.update_traces(line_color='#0083B8', line_width=3)
     st.plotly_chart(fig_vento_temp, use_container_width=True, key="grafico_vento_temporal")
     
+    # --- SEÇÃO DE ROSAS (VENTO E ONDA) ---
     st.markdown("---")
-    st.subheader("🧭 Análise Direcional (Rosas de Vento e Onda)")
+    st.subheader("Análise Direcional (Rosas de Vento e Onda)")
     
     col_r1, col_r2 = st.columns(2)
     
