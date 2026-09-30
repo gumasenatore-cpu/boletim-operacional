@@ -10,10 +10,10 @@ import os
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# 1. Exibe a logo original na barra lateral
+# 1. Exibe a logo original na barra lateral (tamanho ajustado para 120)
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, width=180)
+    st.sidebar.image(logo, width=120)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
@@ -66,7 +66,7 @@ else:
     lon = lon_graus + (lon_sinal * (lon_min / 60.0))
     
     nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
-    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lon:.4f}")
+    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lat:.4f}")
 
 # Exibe o mapa nativo do Streamlit com a posição selecionada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
@@ -76,6 +76,11 @@ st.sidebar.map(df_mapa, zoom=8, height=180)
 st.sidebar.markdown("---")
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
+
+# Novo filtro de horário diurno
+st.sidebar.markdown("---")
+st.sidebar.header("Filtros Operacionais")
+filtro_diurno = st.sidebar.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
 
 # Função auxiliar para converter graus em pontos cardeais
 def graus_para_direcao(deg):
@@ -132,6 +137,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     data_fim = data_inicio + pd.Timedelta(days=dias_janela)
     df = df_completo[(df_completo['Data_Hora'] >= data_inicio) & (df_completo['Data_Hora'] <= data_fim)].copy()
     
+    # Aplica o filtro de horário diurno se selecionado
+    if filtro_diurno:
+        df = df[(df['Data_Hora'].dt.hour >= 6) & (df['Data_Hora'].dt.hour <= 18)].copy()
+    
     def regras(row):
         onda = row['Onda_Altura(m)']
         vento = row['Vento_Nos']
@@ -152,7 +161,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pass
 
     st.title("Boletim Meteoceanográfico")
-    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias)")
+    
+    txt_diurno = " (Apenas Período Diurno: 06h - 18h)" if filtro_diurno else ""
+    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){txt_diurno}")
     
     # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS ---
     with st.expander("ℹ️ Informações e Fontes de Dados Utilizadas neste Boletim"):
@@ -211,7 +222,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
                  use_container_width=True, hide_index=True)
     
     # --- GRÁFICO 1: MARÉ E ONDAS ---
-    st.subheader(f"Análise Temporal (Maré e Altura de Onda): Janela de {dias_janela} Dias")
+    st.subheader(f"Análise Temporal (Maré e Altura de Onda)")
     fig_geral = px.line(
         df, 
         x='Data_Hora', 
@@ -223,7 +234,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.plotly_chart(fig_geral, use_container_width=True, key="grafico_temporal_geral")
     
     # --- GRÁFICO 2: VENTO TEMPORAL ---
-    st.subheader(f"Análise Temporal de Vento (Velocidade): Janela de {dias_janela} Dias")
+    st.subheader(f"Análise Temporal de Vento (Velocidade)")
     fig_vento_temp = px.line(
         df, 
         x='Data_Hora', 
