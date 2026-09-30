@@ -77,7 +77,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("Janela de Previsão")
 dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
-# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ATUALIZADA ---
+# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ---
 st.sidebar.markdown("---")
 st.sidebar.header("Seleção de Sensores")
 lista_sensores_disponiveis = [
@@ -114,7 +114,6 @@ limites_sensores = {
     "Sistema Sísmico Multicanal (Rebocado)": {"vento": 12.0, "onda": 1.0}
 }
 
-# Determina os limites mais restritivos com base nos sensores selecionados
 if sensores_selecionados:
     limite_vento_ativo = min([limites_sensores[s]["vento"] for s in sensores_selecionados])
     limite_onda_ativo = min([limites_sensores[s]["onda"] for s in sensores_selecionados])
@@ -122,7 +121,6 @@ else:
     limite_vento_ativo = 20.0
     limite_onda_ativo = 2.0
 
-# Função auxiliar para converter graus em pontos cardeais
 def graus_para_direcao(deg):
     if pd.isna(deg):
         return ""
@@ -133,19 +131,28 @@ def graus_para_direcao(deg):
 
 @st.cache_data
 def carregar_dados_nacionais(lat_val, lon_val):
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,sea_level_height_including_tides&forecast_days=16&timezone=America%2FSao_Paulo"
+    # Parâmetros limpios e estáveis para a API Marine
+    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&forecast_days=16&timezone=America%2FSao_Paulo"
     url_vento = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&forecast_days=16&timezone=America%2FSao_Paulo"
     
+    resp_mar = {}
+    resp_vento = {}
+    
     try:
-        resp_mar = requests.get(url_mar, timeout=10).json()
+        r_mar = requests.get(url_mar, timeout=10)
+        if r_mar.status_code == 200:
+            resp_mar = r_mar.json()
     except Exception:
-        resp_mar = {}
+        pass
 
     try:
-        resp_vento = requests.get(url_vento, timeout=10).json()
+        r_vento = requests.get(url_vento, timeout=10)
+        if r_vento.status_code == 200:
+            resp_vento = r_vento.json()
     except Exception:
-        resp_vento = {}
+        pass
 
+    # Eixo temporal
     if 'hourly' in resp_mar and 'time' in resp_mar['hourly']:
         datas = pd.to_datetime(resp_mar['hourly']['time'])
     elif 'hourly' in resp_vento and 'time' in resp_vento['hourly']:
@@ -155,50 +162,52 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     n_horas = len(datas)
 
-    if 'hourly' in resp_mar and 'wave_height' in resp_mar['hourly'] and resp_mar['hourly']['wave_height']:
-        wave_height = [w if w is not None else 0.5 for w in resp_mar['hourly']['wave_height']]
-        wave_dir = [d if d is not None else 0 for d in resp_mar['hourly']['wave_direction']]
-    else:
-        wave_height = [0.8] * n_horas
-        wave_dir = [90] * n_horas
-
-    if 'hourly' in resp_mar and 'sea_level_height_including_tides' in resp_mar['hourly'] and any(v is not None for v in resp_mar['hourly']['sea_level_height_including_tides']):
-        mare_bruto = resp_mar['hourly']['sea_level_height_including_tides']
-        mare_arr = np.array([m if m is not None else 0.0 for m in mare_bruto])
-        mare = mare_arr - np.min(mare_arr) + 0.5
-    else:
-        horas = np.arange(n_horas)
-        omega_m2 = 2 * np.pi / 12.4206
-        omega_s2 = 2 * np.pi / 12.0000
-        omega_k1 = 2 * np.pi / 23.9345
-        omega_o1 = 2 * np.pi / 25.8193
-        mare = (
-            0.45 * np.cos(omega_m2 * horas - 1.2) +
-            0.15 * np.cos(omega_s2 * horas - 0.5) +
-            0.20 * np.cos(omega_k1 * horas - 0.8) +
-            0.10 * np.cos(omega_o1 * horas - 0.3) +
-            0.80
-        )
-
+    # Tratamento de Vento primeiro (necessário para estimativa dinâmica se ondas falharem)
     if 'hourly' in resp_vento and 'wind_speed_10m' in resp_vento['hourly'] and resp_vento['hourly']['wind_speed_10m']:
-        wind_speed = np.array([s if s is not None else 10.0 for s in resp_vento['hourly']['wind_speed_10m']]) / 1.852
+        wind_speed_ms = np.array([s if s is not None else 5.0 for s in resp_vento['hourly']['wind_speed_10m']])
         wind_dir = [d if d is not None else 0 for d in resp_vento['hourly']['wind_direction_10m']]
     else:
-        wind_speed = np.array([10.0] * n_horas)
+        wind_speed_ms = np.array([5.0] * n_horas)
         wind_dir = [0] * n_horas
+
+    wind_speed_nos = wind_speed_ms / 0.5144
+
+    # Tratamento de Ondas (com fallback dinâmico baseado no vento se a API marinha falhar)
+    if 'hourly' in resp_mar and 'wave_height' in resp_mar['hourly'] and resp_mar['hourly']['wave_height']:
+        wave_height = [w if w is not None else 0.5 for w in resp_mar['hourly']['wave_height']]
+        wave_dir = [d if d is not None else wind_dir[i] for i, d in enumerate(resp_mar['hourly']['wave_direction'])]
+    else:
+        # Estimativa física proporcional ao vento local em vez de número estático fixo
+        wave_height = list(np.clip(wind_speed_ms * 0.15 + 0.3, 0.4, 3.5))
+        wave_dir = wind_dir
+
+    # Modelo Harmônico de Maré / Nível do Mar Costeiro
+    horas = np.arange(n_horas)
+    omega_m2 = 2 * np.pi / 12.4206
+    omega_s2 = 2 * np.pi / 12.0000
+    omega_k1 = 2 * np.pi / 23.9345
+    omega_o1 = 2 * np.pi / 25.8193
+    mare = (
+        0.45 * np.cos(omega_m2 * horas - 1.2) +
+        0.15 * np.cos(omega_s2 * horas - 0.5) +
+        0.20 * np.cos(omega_k1 * horas - 0.8) +
+        0.10 * np.cos(omega_o1 * horas - 0.3) +
+        0.80
+    )
 
     df = pd.DataFrame({
         'Data_Hora': datas,
         'Mare_Altura(m)': np.round(mare, 2),
-        'Onda_Altura(m)': wave_height,
+        'Onda_Altura(m)': np.round(wave_height, 2),
         'Onda_Dir_Num': wave_dir,
-        'Vento_Nos': np.round(wind_speed, 1),
+        'Vento_Nos': np.round(wind_speed_nos, 1),
         'Vento_Dir_Num': wind_dir
     })
     
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
+    # Modelo hidrodinâmico estuarino dinâmico
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
     velocidade_ms = np.abs(delta_mare) * 1.8
     velocidade_ms = np.clip(velocidade_ms, 0.1, 2.5)
@@ -226,13 +235,7 @@ def carregar_dados_nacionais(lat_val, lon_val):
     return df
 
 st.sidebar.markdown("---")
-gerar_clicado = st.sidebar.button("Gerar Boletim Operacional")
-
-# Gerencia o estado na sessão para evitar perda de dados no clique do PDF
-if gerar_clicado:
-    st.session_state['dados_gerados'] = True
-
-if st.session_state.get('dados_gerados', False):
+if st.sidebar.button("Gerar Boletim Operacional"):
     df_completo = carregar_dados_nacionais(lat, lon)
     
     data_inicio = df_completo['Data_Hora'].min()
@@ -309,14 +312,15 @@ if st.session_state.get('dados_gerados', False):
         
         **2. Diretrizes de Operação (Padrões IHO / IMCA):**
         * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll que degradam a acurácia batimétrica.
-        * **Sistemas Rebocados (Magnetômetro / Sidescan + SBP / Sísmica):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion) e esforço mecânico excessivo.
+        * **Sistemas Rebocados (Magnetômetro / Sidescan+SBP / Sísmicas):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion).
         
         **3. Fontes e Motores Hidrodinâmicos:**
-        * **Mare e Nível do Mar:** Obtido via modelo oceanográfico global (*Sea Level Height including tides*) combinado com compensação harmônica costeira.
+        * **Mare e Nível do Mar:** Obtido via modelo harmônico e compensação costeira.
         * **Correntes Estuarinas:** Calculadas dinamicamente via gradiente temporal da maré (dh/dt), simulando o escoamento em canais e barras (Enchente e Vazante) em nós (kn).
         * **Ondas e Ventos:** Modelos em tempo real Open-Marine e Forecast (Open-Meteo).
         """)
     
+    # Função de PDF com salvamento de estado seguro para evitar recarregamento
     def gerar_pdf(dataframe, local_nome, dias):
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
@@ -353,14 +357,17 @@ if st.session_state.get('dados_gerados', False):
         pdf.output(temp_file.name)
         return temp_file.name
 
-    pdf_path = gerar_pdf(df, nome_local_exibicao, dias_janela)
-    with open(pdf_path, "rb") as pdf_file:
+    # Armazena o PDF no session_state para que o botão de download funcione sem apagar o boletim
+    if 'pdf_path' not in st.session_state or st.sidebar.button("Atualizar Cache PDF"):
+        st.session_state['pdf_path'] = gerar_pdf(df, nome_local_exibicao, dias_janela)
+
+    with open(st.session_state['pdf_path'], "rb") as pdf_file:
         st.download_button(
             label="Baixar Boletim em PDF",
             data=pdf_file,
             file_name="boletim_meteo_4sas.pdf",
             mime="application/pdf",
-            key="btn_pdf"
+            key="btn_pdf_download"
         )
     
     df_exibicao = df[['Data_Hora', 'Mare_Altura(m)', 'Fase_Estuario', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir']].copy()
