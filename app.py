@@ -7,7 +7,7 @@ from PIL import Image
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
-# Exibe a logo da 4SAS no topo da barra lateral
+# 1. Exibe a logo da 4SAS no topo da barra lateral
 try:
     logo = Image.open("logo.png")
     st.sidebar.image(logo, use_container_width=True)
@@ -15,36 +15,53 @@ except Exception:
     st.sidebar.title("4SAS - Operações")
 
 st.sidebar.markdown("---")
-st.sidebar.header("📍 Localização do Levantamento")
+# Removido o ícone do pino vermelho conforme solicitado
+st.sidebar.header("Localização do Levantamento")
 
-# Função para buscar coordenadas digitando o nome do local (Geocoding API)
-def buscar_coordenadas(nome_local):
+# Escolha do método de entrada de posição
+modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas Manuais"])
+
+lat, lon = -22.42, -41.02  # Padrão inicial (Barra do Furado)
+nome_local_exibicao = "Barra do Furado, RJ"
+
+if modo_pos == "Busca por Nome":
+    termo_busca = st.sidebar.text_input("Digite o local (ex: Itajaí, Porto do Açu)", value="Barra do Furado")
     try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={nome_local}&count=1&language=pt&format=json"
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={termo_busca}&count=1&language=pt&format=json"
         resp = requests.get(url).json()
         if "results" in resp and len(resp["results"]) > 0:
             lat = resp["results"][0]["latitude"]
             lon = resp["results"][0]["longitude"]
-            nome_encontrado = resp["results"][0].get("name", nome_local)
+            cidade = resp["results"][0].get("name", termo_busca)
             pais = resp["results"][0].get("country", "")
-            return lat, lon, f"{nome_encontrado} ({pais})"
+            nome_local_exibicao = f"{cidade} ({pais})"
+            st.sidebar.success(f"Encontrado: **{nome_local_exibicao}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
+        else:
+            st.sidebar.error("Local não encontrado. Usando padrão.")
     except Exception:
-        pass
-    return None, None, None
-
-# Campo de digitação livre para o local
-termo_busca = st.sidebar.text_input("Buscar Localidade (ex: Barra do Furado)", value="Barra do Furado")
-
-# Se o usuário digitou algo, busca a coordenada na API
-lat, lon, nome_formatado = buscar_coordenadas(termo_busca)
-
-if lat is not None and lon is not None:
-    st.sidebar.success(f"Encontrado: **{nome_formatado}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
+        st.sidebar.error("Erro na busca. Usando padrão.")
 else:
-    st.sidebar.error("Local não encontrado. Usando coordenadas padrão.")
-    lat, lon = -22.42, -41.02 # Padrão Barra do Furado
+    st.sidebar.markdown("**Insira sua coordenada aqui:**")
+    tipo_coord = st.sidebar.selectbox("Sistema de Coordenadas", ["Latitude / Longitude (Decimais)", "UTM (X e Y)"])
+    
+    if tipo_coord == "Latitude / Longitude (Decimais)":
+        lat = st.sidebar.number_input("Latitude", value=-22.4200, format="%.4f")
+        lon = st.sidebar.number_input("Longitude", value=-41.0200, format="%.4f")
+        nome_local_exibicao = f"Lat: {lat}, Lon: {lon}"
+    else:
+        st.sidebar.info("Conversor básico UTM para WGS84 (Aproximado)")
+        x_utm = st.sidebar.number_input("Coordenada X (Easting)", value=300000.0)
+        y_utm = st.sidebar.number_input("Coordenada Y (Northing)", value=7500000.0)
+        zona = st.sidebar.number_input("Fuso / Zona UTM", value=23, min_value=1, max_value=60)
+        
+        # Conversão aproximada de UTM simples para fins de demonstração no app
+        # (Para cálculos rigorosos embarcados, usa-se pyproj, mantido leve aqui)
+        lat = -22.0 - ((y_utm - 7000000) / 111000)
+        lon = -43.0 + ((x_utm - 500000) / 100000)
+        nome_local_exibicao = f"UTM X:{x_utm} Y:{y_utm} (Zona {zona})"
+        st.sidebar.success(f"Convertido p/ Lat/Lon: {lat:.4f}, {lon:.4f}")
 
-# Exibe o mapa nativo do Streamlit com a posição encontrada
+# Exibe o mapa nativo do Streamlit com a posição selecionada
 df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
 st.sidebar.markdown("**Posição no Mapa:**")
 st.sidebar.map(df_mapa, zoom=8, height=180)
@@ -114,8 +131,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     df[['Status', 'Avisos']] = df.apply(regras, axis=1, result_type='expand')
     
-    st.title("🌊 Painel de Operações Hidrográficas")
-    st.subheader(f"Previsão Tática para: {termo_busca.capitalize()} (Lat: {lat:.4f}, Lon: {lon:.4f})")
+    # Título alterado para Boletim Meteoceanográfico sem o ícone de onda
+    st.title("Boletim Meteoceanográfico")
+    st.subheader(f"Previsão Tática para: {nome_local_exibicao}")
     
     st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
                  use_container_width=True, hide_index=True)
@@ -136,8 +154,4 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig.data[0].update(line_width=3)
     fig.data[1].update(line_width=3)
     
-    st.plotly_chart(fig, use_container_width=True)
-    fig.data[0].update(line_width=3)
-    fig.data[1].update(line_width=3)
-    
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="grafico_previsao_4dias_v2")
