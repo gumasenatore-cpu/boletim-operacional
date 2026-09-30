@@ -13,7 +13,7 @@ st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 # 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
-    st.sidebar.image(logo, width=110)
+    st.sidebar.image(logo, width=180)
 except Exception:
     st.sidebar.title("4SAS - Operações")
 
@@ -154,8 +154,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.title("Boletim Meteoceanográfico")
     st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias)")
     
-    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
-                 use_container_width=True, hide_index=True)
+    # --- BOTÃO EXPANSÍVEL DE FONTES DE DADOS ---
+    with st.expander("ℹ️ Informações e Fontes de Dados Utilizadas neste Boletim"):
+        st.markdown("""
+        Este painel utiliza motores independentes e APIs meteorológicas oficiais de alta confiabilidade:
+        * **🌊 Maré:** Calculada de forma **nativa via Python (NumPy)** através de modelo harmônico somando as principais componentes da costa brasileira (**M2, S2, K1 e O1**), garantindo independência de tabelas estáticas.
+        * **🌊 Onda (Altura e Direção):** Obtida em tempo real via API oficial **Open-Marine (Open-Meteo)**, baseada em modelos oceânicos globais.
+        * **💨 Vento (Velocidade e Direção):** Obtida em tempo real via API de previsão do tempo **Open-Meteo (Forecast)**, convertida para nós (kn) a partir de dados a 10 metros de altura.
+        """)
     
     # --- FUNÇÃO DE GERAÇÃO DE PDF ---
     def gerar_pdf(dataframe, local_nome, dias):
@@ -201,6 +207,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             key="btn_pdf"
         )
     
+    st.dataframe(df[['Data_Hora', 'Mare_Altura(m)', 'Onda_Altura(m)', 'Onda_Dir', 'Vento_Nos', 'Vento_Dir', 'Status', 'Avisos']], 
+                 use_container_width=True, hide_index=True)
+    
     # --- GRÁFICO 1: MARÉ E ONDAS ---
     st.subheader(f"Análise Temporal (Maré e Altura de Onda): Janela de {dias_janela} Dias")
     fig_geral = px.line(
@@ -213,7 +222,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig_geral.data[1].update(line_width=3)
     st.plotly_chart(fig_geral, use_container_width=True, key="grafico_temporal_geral")
     
-    # --- GRÁFICO 2: VENTO TEMPORAL (NOVO) ---
+    # --- GRÁFICO 2: VENTO TEMPORAL ---
     st.subheader(f"Análise Temporal de Vento (Velocidade): Janela de {dias_janela} Dias")
     fig_vento_temp = px.line(
         df, 
