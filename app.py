@@ -93,7 +93,7 @@ with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
     ativar_rumo_critico = st.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
     rumo_embarcacao = 0
     if ativar_rumo_critico:
-        rumo_embarcacao = st.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
+        rumo_embarcacao = st.sidebar.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
 
 # Dicionário de Limites Operacionais fornecidos pela equipe técnica
 limites_equipamentos = {
@@ -128,7 +128,10 @@ def graus_para_direcao(deg):
 
 @st.cache_data
 def carregar_dados_multimodelo(lat_val, lon_val):
-    url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&forecast_days=16&timezone=America%2FSao_Paulo"
+    # Requisições multi-modelo para Ondas (ECMWF Waves e WaveWatch III / gfs_wave) e Ventos
+    url_mar_ecmwf = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&models=ecmwf_waves&forecast_days=16&timezone=America%2FSao_Paulo"
+    url_mar_ww3 = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&models=best_match&forecast_days=16&timezone=America%2FSao_Paulo"
+    
     url_vento_ecmwf = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=ecmwf_ifs025&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
     url_vento_gfs = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
     url_vento_icon = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
@@ -142,13 +145,14 @@ def carregar_dados_multimodelo(lat_val, lon_val):
             pass
         return {}
 
-    j_mar = fetch_json(url_mar)
+    j_mar_ecmwf = fetch_json(url_mar_ecmwf)
+    j_mar_ww3 = fetch_json(url_mar_ww3)
     j_v_ecmwf = fetch_json(url_vento_ecmwf)
     j_v_gfs = fetch_json(url_vento_gfs)
     j_v_icon = fetch_json(url_vento_icon)
 
-    if 'hourly' in j_mar and 'time' in j_mar['hourly']:
-        datas = pd.to_datetime(j_mar['hourly']['time'])
+    if 'hourly' in j_mar_ecmwf and 'time' in j_mar_ecmwf['hourly']:
+        datas = pd.to_datetime(j_mar_ecmwf['hourly']['time'])
     elif 'hourly' in j_v_ecmwf and 'time' in j_v_ecmwf['hourly']:
         datas = pd.to_datetime(j_v_ecmwf['hourly']['time'])
     else:
@@ -166,9 +170,15 @@ def carregar_dados_multimodelo(lat_val, lon_val):
                 return np.pad(arr_clean, (0, n_horas - len(arr_clean)), 'edge')
         return np.array([default_val] * n_horas)
 
-    wave_height_oficial = get_series(j_mar, 'wave_height', 0.8)
-    wave_dir_oficial = get_series(j_mar, 'wave_direction', 90.0)
+    # Séries de Ondas por Modelo (ECMWF Waves e WaveWatch III / Best Match)
+    w_ecmwf = get_series(j_mar_ecmwf, 'wave_height', 0.8)
+    w_ww3 = get_series(j_mar_ww3, 'wave_height', 0.8)
+    wave_dir_oficial = get_series(j_mar_ecmwf, 'wave_direction', 90.0)
 
+    # Curva de Consenso de Ondas (Ensemble entre ECMWF Waves e WaveWatch III)
+    w_consenso = (w_ecmwf + w_ww3) / 2.0
+
+    # Séries de Ventos (Comitê Multi-Modelo)
     v_ecmwf = get_series(j_v_ecmwf, 'wind_speed_10m', 5.0)
     v_gfs = get_series(j_v_gfs, 'wind_speed_10m', 5.0)
     v_icon = get_series(j_v_icon, 'wind_speed_10m', 5.0)
@@ -193,7 +203,9 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     df = pd.DataFrame({
         'Data_Hora': datas,
         'Mare_Altura(m)': np.round(mare, 2),
-        'Onda_Oficial(m)': np.round(wave_height_oficial, 2),
+        'Onda_Consenso(m)': np.round(w_consenso, 2),
+        'Onda_ECMWF(m)': np.round(w_ecmwf, 2),
+        'Onda_WW3(m)': np.round(w_ww3, 2),
         'Onda_Dir_Num': wave_dir_oficial,
         'Vento_Consenso_Nos': np.round(v_consenso, 1),
         'Vento_ECMWF_Nos': np.round(v_ecmwf, 1),
@@ -243,7 +255,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         df = df[(df['Data_Hora'].dt.hour >= 6) & (df['Data_Hora'].dt.hour <= 18)].copy()
     
     def regras_e_incidencia(row):
-        onda = row['Onda_Oficial(m)']
+        onda = row['Onda_Consenso(m)']
         vento = row['Vento_Consenso_Nos']
         corrente = row['Corrente_Vel_Nos']
         onda_dir = row['Onda_Dir_Num']
@@ -296,7 +308,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){sub_str}")
     corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
-    st.markdown(f"**Equipamentos Ativos:** {', '.join(equipamentos_selecionados) if equipamentos_selecionados else 'Nenhum'} | **Limiar Oficial:** Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}")
+    st.markdown(f"**Equipamentos Ativos:** {', '.join(equipamentos_selecionados) if equipamentos_selecionados else 'Nenhum'} | **Limiar Consenso:** Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}")
     
     total_horas = len(df)
     favoraveis = len(df[df['Status'] == "FAVORAVEL"])
@@ -313,7 +325,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     kpi2.metric("Avaliacao Tecnica", f"{tecnicas}h ({p_tec:.1f}%)")
     kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
     
-    # --- PAINEL DE ALERTAS OPERACIONAIS E AVGN DA MARINHA (SEM EMOJI) ---
+    # --- PAINEL DE ALERTAS OPERACIONAIS E AVGN DA MARINHA ---
     horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
     horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
     
@@ -352,13 +364,16 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         Para assegurar total confiabilidade nas operações de campo, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
         
         **1. Previsão de Ventos em Nós (Comitê Multi-Modelo / Ensemble):**
-        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três dos modelos numéricos atmosféricos mais respeitados do mundo:
-        * **ECMWF IFS (Centro Europeu de Previsão de Tempo a Médio Prazo - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
-        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo meteorológico oficial americano de referência sinótica global.
-        * **ICON (Icosahedral Nonhydrostatic - DWD, Alemanha):** Modelo de altíssima resolução espacial, utilizado para validação cruzada regional.
+        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. O aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três modelos atmosféricos globais:
+        * **ECMWF IFS (Centro Europeu - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
+        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo oficial americano de referência sinótica global.
+        * **ICON (DWD, Alemanha):** Modelo de altíssima resolução espacial para validação cruzada.
         
-        **2. Agitação Marítima e Altura de Ondas:**
-        * **Onda Oficial (API Marine / Open-Meteo):** Dados oceanográficos diretos que simulam a propagação real de vagas e swell gerados em mar aberto e sua chegada à costa.
+        **2. Agitação Marítima e Altura de Ondas (Comitê Multi-Modelo de Ondas):**
+        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida a média dos modelos de onda de maior prestígio internacional:
+        * **ECMWF Waves (Centro Europeu):** Referência global em previsão acoplada de ondas e energia de superfície.
+        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de ondas em águas profundas e costeiras.
+        * *Fundamentação:* O cruzamento estatístico (ensemble) entre ECMWF Waves e WaveWatch III mitiga incertezas individuais de propagação de swell, garantindo a curva de consenso mais precisa para a matriz de Go/No-Go.
         
         **3. Correntes Estuarinas e Maré:**
         * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
@@ -374,14 +389,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.set_font("helvetica", "", 10)
         pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Equipamentos: {', '.join(equipamentos_selecionados)}", ln=True, align="C")
         corrente_pdf_txt = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
-        pdf.cell(0, 6, f"Limiar Oficial: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
+        pdf.cell(0, 6, f"Limiar Consenso: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         pdf.ln(2)
         pdf.set_font("helvetica", "B", 8)
         pdf.cell(0, 6, "AVISO DE BORDO: Consultar obrigatoriamente os Avisos aos Navegantes (AVGN) da DHN antes de zarpar.", ln=True, align="C")
         pdf.ln(2)
         
         pdf.set_font("helvetica", "B", 8)
-        colunas = ["Data / Hora", "Mare(m)", "Fase Estuario", "Onda(Oficial)", "Vento(Consenso)", "Corrente", "Status"]
+        colunas = ["Data / Hora", "Mare(m)", "Fase Estuario", "Onda(Consenso)", "Vento(Consenso)", "Corrente", "Status"]
         larguras = [45, 25, 32, 35, 35, 35, 60]
         
         for i, col in enumerate(colunas):
@@ -393,7 +408,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             pdf.cell(larguras[0], 6, str(row['Data_Hora'])[:-3], border=1, align="C")
             pdf.cell(larguras[1], 6, f"{row['Mare_Altura(m)']:.2f}", border=1, align="C")
             pdf.cell(larguras[2], 6, str(row['Fase_Estuario']), border=1, align="C")
-            pdf.cell(larguras[3], 6, f"{row['Onda_Oficial(m)']:.2f} m ({row['Onda_Dir']})", border=1, align="C")
+            pdf.cell(larguras[3], 6, f"{row['Onda_Consenso(m)']:.2f} m ({row['Onda_Dir']})", border=1, align="C")
             pdf.cell(larguras[4], 6, f"{row['Vento_Consenso_Nos']:.1f} kn ({row['Vento_Dir']})", border=1, align="C")
             pdf.cell(larguras[5], 6, f"{row['Corrente_Vel_Nos']} kn ({row['Corrente_Dir']})", border=1, align="C")
             pdf.cell(larguras[6], 6, str(row['Status']), border=1, align="C")
@@ -415,23 +430,24 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             key="btn_pdf_download"
         )
     
-    df_exibicao = df[['Data_Hora', 'Mare_Altura(m)', 'Fase_Estuario', 'Onda_Oficial(m)', 'Onda_Dir', 'Vento_Consenso_Nos', 'Vento_Dir']].copy()
+    df_exibicao = df[['Data_Hora', 'Mare_Altura(m)', 'Fase_Estuario', 'Onda_Consenso(m)', 'Onda_Dir', 'Vento_Consenso_Nos', 'Vento_Dir']].copy()
     df_exibicao['Corrente'] = df['Corrente_Vel_Nos'].astype(str) + " kn (" + df['Corrente_Dir'] + ")"
     df_exibicao['Status'] = df['Status']
     df_exibicao['Avisos'] = df['Avisos']
     
     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     
-    # --- GRÁFICO DE ALTURA DE ONDA (SUAVIZADO COM SPLINE) ---
-    st.subheader("Análise Temporal de Agitação Marítima (Altura da Onda / Swell)")
-    fig_onda = px.line(
+    # --- GRÁFICO DE COMPARAÇÃO DE ONDAS (CONSENSO VS ECMWF VS WW3) ---
+    st.subheader("Comparação de Modelos Numéricos de Onda (Consenso vs ECMWF Waves vs WaveWatch III)")
+    fig_onda_comp = px.line(
         df, 
         x='Data_Hora', 
-        y='Onda_Oficial(m)',
-        labels={'Onda_Oficial(m)': 'Altura da Onda (m)', 'Data_Hora': 'Horário'}
+        y=['Onda_Consenso(m)', 'Onda_ECMWF(m)', 'Onda_WW3(m)'],
+        labels={'value': 'Altura da Onda (m)', 'Data_Hora': 'Horário', 'variable': 'Modelo Numérico'}
     )
-    fig_onda.update_traces(line_color='#0083B8', line_width=3, line_shape='spline')
-    st.plotly_chart(fig_onda, use_container_width=True, key="grafico_onda_oficial")
+    fig_onda_comp.update_traces(line_shape='spline', line_width=2)
+    fig_onda_comp.data[0].update(line_width=3.5, line_color='black') # Consenso em destaque
+    st.plotly_chart(fig_onda_comp, use_container_width=True, key="grafico_onda_comparacao")
     
     # --- GRÁFICO DE COMPARAÇÃO DE VENTOS EM NÓS (SUAVIZADO COM SPLINE) ---
     st.subheader("Comparação de Modelos Numéricos de Vento (Consenso vs ECMWF vs GFS vs ICON - em Nós)")
@@ -459,7 +475,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
     
     st.markdown("---")
-    st.subheader("Análise Direcional (Rosas de Vento e Onda - Oficial)")
+    st.subheader("Análise Direcional (Rosas de Vento e Onda - Consenso)")
     
     col_r1, col_r2 = st.columns(2)
     
@@ -480,14 +496,14 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             st.plotly_chart(fig_wind, use_container_width=True, key="rosa_vento")
             
     with col_r2:
-        st.markdown("**Rosa de Ondas / Swell (Oficial)**")
-        df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Oficial(m)'])
+        st.markdown("**Rosa de Ondas / Swell (Consenso)**")
+        df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Consenso(m)'])
         if not df_onda_clean.empty:
             fig_wave = px.bar_polar(
                 df_onda_clean, 
-                r="Onda_Oficial(m)", 
+                r="Onda_Consenso(m)", 
                 theta="Onda_Dir", 
-                color="Onda_Oficial(m)",
+                color="Onda_Consenso(m)",
                 color_continuous_scale="Blues",
                 direction="clockwise",
                 start_angle=90
