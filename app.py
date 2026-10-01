@@ -129,7 +129,6 @@ def graus_para_direcao(deg):
 @st.cache_data
 def carregar_dados_multimodelo(lat_val, lon_val):
     url_mar = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat_val}&longitude={lon_val}&hourly=wave_height,wave_direction,wave_period&forecast_days=16&timezone=America%2FSao_Paulo"
-    # Solicitando wind_speed_unit=kn para que a API retorne os ventos diretamente em nós (knots)
     url_vento_ecmwf = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=ecmwf_ifs025&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
     url_vento_gfs = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=gfs_seamless&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
     url_vento_icon = f"https://api.open-meteo.com/v1/forecast?latitude={lat_val}&longitude={lon_val}&hourly=wind_speed_10m,wind_direction_10m&models=icon_seamless&wind_speed_unit=kn&timezone=America%2FSao_Paulo"
@@ -170,7 +169,6 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     wave_height_oficial = get_series(j_mar, 'wave_height', 0.8)
     wave_dir_oficial = get_series(j_mar, 'wave_direction', 90.0)
 
-    # Valores já em nós (kn) nativos da API
     v_ecmwf = get_series(j_v_ecmwf, 'wind_speed_10m', 5.0)
     v_gfs = get_series(j_v_gfs, 'wind_speed_10m', 5.0)
     v_icon = get_series(j_v_icon, 'wind_speed_10m', 5.0)
@@ -314,6 +312,29 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     kpi1.metric("Janela Favoravel", f"{favoraveis}h ({p_fav:.1f}%)")
     kpi2.metric("Avaliacao Tecnica", f"{tecnicas}h ({p_tec:.1f}%)")
     kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
+    
+    # --- SISTEMA DE ALERTAS OPERACIONAIS E AVGN DA MARINHA ---
+    horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
+    horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
+    
+    st.markdown("### 🚨 Painel de Alertas Operacionais e Avisos aos Navegantes (AVGN)")
+    
+    # Bloco de Alerta Meteoceanográfico Automático
+    if not horas_nogo.empty:
+        primeiro_nogo = horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')
+        st.error(f"**ALERTA METEO: RESTRIÇÃO CRÍTICA (NO-GO):** Identificados {len(horas_nogo)} períodos de bloqueio na janela. Início previsto para **{primeiro_nogo}**.")
+    elif not horas_atencao.empty:
+        st.warning(f"**AVISO METEO: CONDIÇÃO LIMITROFE:** Foram identificadas **{len(horas_atencao)} horas** em patamar de atenção (75% a 100% dos limites ou mar de través).")
+    else:
+        st.success("**CONDIÇÃO METEO FAVORÁVEL:** Janela inteiramente operável dentro dos limiares dos equipamentos.")
+
+    # Bloco de Alerta Oficial da Marinha do Brasil (AVGN / DHN)
+    st.info("""
+    ⚓ **AVISOS AOS NAVEGANTES (AVGN) - MARINHA DO BRASIL / DHN:**
+    * **Obrigação de Bordo:** Antes de iniciar a faina de levantamento, o Comandante / Chefe de Equipe deve consultar obrigatoriamente os Avisos aos Navegantes vigentes da área de jurisdição do Distrito Naval correspondente.
+    * **Consultas Oficiais:** Verifique avisos sobre obras portuárias, fundeios restritos, sinalização náutica irregular ou exercícios militares diretamente no [Portal de Avisos aos Navegantes da DHN](https://www.marinha.mil.br/chm/avisos-aos-navegantes).
+    """)
+
     st.markdown("---")
 
     with st.expander("Diretrizes Operacionais e Limites de Equipamentos"):
@@ -334,17 +355,16 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         **1. Previsão de Ventos em Nós (Comitê Multi-Modelo / Ensemble):**
         O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três dos modelos numéricos atmosféricos mais respeitados do mundo:
-        * **ECMWF IFS (Centro Europeu de Previsão de Tempo a Médio Prazo - Europa):** Considerado o padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
-        * **GFS (Global Forecast System - NOAA, Estados Unidos):** O modelo meteorológico oficial americano de referência sinótica global.
+        * **ECMWF IFS (Centro Europeu de Previsão de Tempo a Médio Prazo - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
+        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo meteorológico oficial americano de referência sinótica global.
         * **ICON (Icosahedral Nonhydrostatic - DWD, Alemanha):** Modelo de altíssima resolução espacial, utilizado para validação cruzada regional.
-        * *Fundamentação:* Ao cruzar três institutos independentes, eliminamos distorções isoladas de previsão, garantindo que a tomada de decisão em campo seja respaldada por um consenso científico internacional.
         
         **2. Agitação Marítima e Altura de Ondas:**
-        * **Onda Oficial (API Marine / Open-Meteo):** Dados oceanográficos diretos que simulam a propagação real de vagas e swell gerados em mar aberto e sua chegada à costa. É a fonte principal que alimenta a matriz de Go/No-Go dos equipamentos.
+        * **Onda Oficial (API Marine / Open-Meteo):** Dados oceanográficos diretos que simulam a propagação real de vagas e swell gerados em mar aberto e sua chegada à costa.
         
         **3. Correntes Estuarinas e Maré:**
         * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
-        * **Correntes em Canais e Barras:** Derivadas dinamicamente por meio da taxa de variação temporal do nível da maré ($\Delta h / \Delta t$), simulando de forma realista o escoamento de enchente e vazante em nós (kn), essencial para operações estuarinas (como Paranaguá, Itajaí e Patos).
+        * **Correntes em Canais e Barras:** Derivadas dinamicamente via taxa de variação temporal do nível da maré ($\Delta h / \Delta t$) em nós (kn).
         """)
     
     def gerar_pdf(dataframe, local_nome, dias):
@@ -357,7 +377,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Equipamentos: {', '.join(equipamentos_selecionados)}", ln=True, align="C")
         corrente_pdf_txt = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
         pdf.cell(0, 6, f"Limiar Oficial: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
-        pdf.ln(4)
+        pdf.ln(2)
+        pdf.set_font("helvetica", "B", 8)
+        pdf.cell(0, 6, "AVISO DE BORDO: Consultar obrigatoriamente os Avisos aos Navegantes (AVGN) da DHN antes de zarpar.", ln=True, align="C")
+        pdf.ln(2)
         
         pdf.set_font("helvetica", "B", 8)
         colunas = ["Data / Hora", "Mare(m)", "Fase Estuario", "Onda(Oficial)", "Vento(Consenso)", "Corrente", "Status"]
@@ -401,7 +424,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     
-    # --- GRÁFICO DE ALTURA DE ONDA ---
+    # --- GRÁFICO DE ALTURA DE ONDA (SUAVIZADO COM SPLINE) ---
     st.subheader("Análise Temporal de Agitação Marítima (Altura da Onda / Swell)")
     fig_onda = px.line(
         df, 
@@ -409,10 +432,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         y='Onda_Oficial(m)',
         labels={'Onda_Oficial(m)': 'Altura da Onda (m)', 'Data_Hora': 'Horário'}
     )
-    fig_onda.update_traces(line_color='#0083B8', line_width=3)
+    fig_onda.update_traces(line_color='#0083B8', line_width=3, line_shape='spline')
     st.plotly_chart(fig_onda, use_container_width=True, key="grafico_onda_oficial")
     
-    # --- GRÁFICO DE COMPARAÇÃO DE VENTOS EM NÓS ---
+    # --- GRÁFICO DE COMPARAÇÃO DE VENTOS EM NÓS (SUAVIZADO COM SPLINE) ---
     st.subheader("Comparação de Modelos Numéricos de Vento (Consenso vs ECMWF vs GFS vs ICON - em Nós)")
     fig_vento_comp = px.line(
         df, 
@@ -420,9 +443,11 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         y=['Vento_Consenso_Nos', 'Vento_ECMWF_Nos', 'Vento_GFS_Nos', 'Vento_ICON_Nos'],
         labels={'value': 'Velocidade do Vento (nós)', 'Data_Hora': 'Horário', 'variable': 'Modelo Numérico'}
     )
-    fig_vento_comp.data[0].update(line_width=3, line_color='black')
+    fig_vento_comp.update_traces(line_shape='spline', line_width=2)
+    fig_vento_comp.data[0].update(line_width=3.5, line_color='black')
     st.plotly_chart(fig_vento_comp, use_container_width=True, key="grafico_vento_comparacao")
 
+    # --- GRÁFICO DE CORRENTES E MARÉ (SUAVIZADO COM SPLINE) ---
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
     fig_corrente = px.line(
         df, 
@@ -430,8 +455,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         y=['Mare_Altura(m)', 'Corrente_Vel_Nos'],
         labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
     )
-    fig_corrente.data[0].update(line_width=3, name="Nível da Maré (m)")
-    fig_corrente.data[1].update(line_width=3, name="Velocidade da Corrente (kn)")
+    fig_corrente.update_traces(line_shape='spline', line_width=3)
+    fig_corrente.data[0].update(name="Nível da Maré (m)")
+    fig_corrente.data[1].update(name="Velocidade da Corrente (kn)")
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
     
     st.markdown("---")
