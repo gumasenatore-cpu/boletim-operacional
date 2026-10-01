@@ -7,6 +7,8 @@ from PIL import Image
 from fpdf import FPDF
 import tempfile
 import os
+import folium
+from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
@@ -18,91 +20,76 @@ except Exception:
     st.sidebar.title("4SAS - Operações")
 
 st.sidebar.markdown("---")
-st.sidebar.header("Localização do Levantamento")
-
-# Escolha do método de entrada de posição
-modo_pos = st.sidebar.radio("Método de Posição:", ["Busca por Nome", "Coordenadas (Graus e Minutos - DM)"])
+st.sidebar.header("Painel de Controle")
 
 lat, lon = -25.51, -48.51  # Padrão inicial em Paranaguá, PR
-nome_local_exibicao = "Paranaguá, PR"
+nome_local_exibicao = "Paranaguá, PR (Coordenadas)"
 
-if modo_pos == "Busca por Nome":
-    termo_busca = st.sidebar.text_input("Digite o local (ex: Paranaguá, Itajaí, Patos)", value="")
+# --- SEÇÃO 1: LOCALIZAÇÃO DO LEVANTAMENTO (EXPANSÍVEL) ---
+with st.sidebar.expander("Localização do Levantamento", expanded=True):
+    modo_pos = st.radio("Método de Posição:", ["Coordenadas (Graus e Minutos - DM)", "Mapa Interativo (Clique na Área)"])
     
-    if termo_busca.strip() != "":
-        try:
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name={termo_busca}&count=1&language=pt&format=json"
-            resp = requests.get(url, timeout=5).json()
-            if "results" in resp and len(resp["results"]) > 0:
-                lat = resp["results"][0]["latitude"]
-                lon = resp["results"][0]["longitude"]
-                cidade = resp["results"][0].get("name", termo_busca)
-                pais = resp["results"][0].get("country", "")
-                nome_local_exibicao = f"{cidade} ({pais})"
-                st.sidebar.success(f"Encontrado: **{nome_local_exibicao}**\nLat: {lat:.4f}, Lon: {lon:.4f}")
-            else:
-                st.sidebar.error("Local não encontrado.")
-        except Exception:
-            st.sidebar.error("Erro na busca de geolocalização.")
+    if modo_pos == "Coordenadas (Graus e Minutos - DM)":
+        st.markdown("**Insira as Coordenadas (DM):**")
+        col1, col2 = st.columns(2)
+        with col1:
+            lat_graus = st.number_input("Lat Graus", value=-25, step=1)
+            lat_min = st.number_input("Lat Minutos", value=30.60, format="%.2f", step=0.01)
+        with col2:
+            lon_graus = st.number_input("Lon Graus", value=-48, step=1)
+            lon_min = st.number_input("Lon Minutos", value=30.60, format="%.2f", step=0.01)
+        
+        lat_sinal = -1 if lat_graus <= 0 else 1
+        lon_sinal = -1 if lon_graus <= 0 else 1
+        
+        lat = lat_graus + (lat_sinal * (lat_min / 60.0))
+        lon = lon_graus + (lon_sinal * (lon_min / 60.0))
+        
+        nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
+        st.success(f"Posição: Lat {lat:.4f}, Lon {lon:.4f}")
+    
     else:
-        st.sidebar.info("Digite um nome de localidade acima.")
-        nome_local_exibicao = "Local Personalizado"
-else:
-    st.sidebar.markdown("**Insira as Coordenadas (DM):**")
-    st.sidebar.markdown("Ex: Lat: -25 e 30.6' | Lon: -48 e 30.6'")
+        st.markdown("Clique no mapa para definir o ponto de survey:")
+        m = folium.Map(location=[-22.42, -41.02], zoom_start=6, tiles="CartoDB positron")
+        m.add_child(folium.LatLngPopup())
+        map_data = st_folium(m, height=250, width="100%")
+        
+        if map_data and map_data.get("last_clicked"):
+            lat = map_data["last_clicked"]["lat"]
+            lon = map_data["last_clicked"]["lng"]
+            nome_local_exibicao = f"Ponto Clicado (Lat: {lat:.4f}, Lon: {lon:.4f})"
+            st.success(f"Selecionado:\nLat: {lat:.4f}, Lon: {lon:.4f}")
+        else:
+            st.info("Dê um clique no mapa acima para selecionar a coordenada do bloco.")
+
+# --- SEÇÃO 2: JANELA DE PREVISÃO (EXPANSÍVEL) ---
+with st.sidebar.expander("Janela de Previsão", expanded=False):
+    dias_janela = st.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
+
+# --- SEÇÃO 3: SELEÇÃO DE SENSORES (EXPANSÍVEL) ---
+with st.sidebar.expander("Seleção de Sensores", expanded=False):
+    lista_sensores_disponiveis = [
+        "Ecobatímetro Monofeixe",
+        "Ecobatímetro Multifeixe (Multibeam)",
+        "Magnetômetro (Rebocado)",
+        "Sidescan + SBP (Integrado Rebocado)",
+        "Sistema Sísmico Monocanal (Rebocado)",
+        "Sistema Sísmico Multicanal (Rebocado)"
+    ]
+    sensores_selecionados = st.multiselect(
+        "Selecione os sensores em operação:",
+        options=lista_sensores_disponiveis,
+        default=["Ecobatímetro Monofeixe"]
+    )
+
+# --- SEÇÃO 4: PARÂMETROS OPCIONAIS (EXPANSÍVEL) ---
+with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
+    filtro_diurno = st.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
     
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        lat_graus = st.number_input("Lat Graus", value=-25, step=1)
-        lat_min = st.number_input("Lat Minutos", value=30.60, format="%.2f", step=0.01)
-    with col2:
-        lon_graus = st.number_input("Lon Graus", value=-48, step=1)
-        lon_min = st.number_input("Lon Minutos", value=30.60, format="%.2f", step=0.01)
-    
-    lat_sinal = -1 if lat_graus <= 0 else 1
-    lon_sinal = -1 if lon_graus <= 0 else 1
-    
-    lat = lat_graus + (lat_sinal * (lat_min / 60.0))
-    lon = lon_graus + (lon_sinal * (lon_min / 60.0))
-    
-    nome_local_exibicao = f"Lat: {lat_graus}° {lat_min}' | Lon: {lon_graus}° {lon_min}'"
-    st.sidebar.success(f"Posição convertida:\nLat: {lat:.4f}, Lon: {lat:.4f}")
-
-# Exibe o mapa nativo do Streamlit
-df_mapa = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-st.sidebar.markdown("**Posição no Mapa:**")
-st.sidebar.map(df_mapa, zoom=8, height=180)
-
-st.sidebar.markdown("---")
-st.sidebar.header("Janela de Previsão")
-dias_janela = st.sidebar.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
-
-# --- SELEÇÃO DE SENSORES E EQUIPAMENTOS ---
-st.sidebar.markdown("---")
-st.sidebar.header("Seleção de Sensores")
-lista_sensores_disponiveis = [
-    "Ecobatímetro Monofeixe",
-    "Ecobatímetro Multifeixe (Multibeam)",
-    "Magnetômetro (Rebocado)",
-    "Sidescan + SBP (Integrado Rebocado)",
-    "Sistema Sísmico Monocanal (Rebocado)",
-    "Sistema Sísmico Multicanal (Rebocado)"
-]
-sensores_selecionados = st.sidebar.multiselect(
-    "Selecione os sensores em operação:",
-    options=lista_sensores_disponiveis,
-    default=["Ecobatímetro Monofeixe"]
-)
-
-# Parâmetros Operacionais Opcionais
-st.sidebar.markdown("---")
-st.sidebar.header("Parâmetros Opcionais")
-filtro_diurno = st.sidebar.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
-
-ativar_rumo_critico = st.sidebar.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
-rumo_embarcacao = 0
-if ativar_rumo_critico:
-    rumo_embarcacao = st.sidebar.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
+    ativar_rumo_critico = st.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
+    rumo_embarcacao = 0
+    if ativar_rumo_critico:
+        rumo_embarcacao = st.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
 
 # Dicionário de Limites Operacionais por Tipo de Sensor (Vento em nós, Onda em metros)
 limites_sensores = {
@@ -160,7 +147,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     n_horas = len(datas)
 
-    # Vento seguro
     if 'hourly' in resp_vento and 'wind_speed_10m' in resp_vento['hourly'] and resp_vento['hourly']['wind_speed_10m']:
         wind_speed_ms = np.array([s if s is not None else 5.0 for s in resp_vento['hourly']['wind_speed_10m']])
         wind_dir = [d if d is not None else 0 for d in resp_vento['hourly']['wind_direction_10m']]
@@ -170,7 +156,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
 
     wind_speed_nos = wind_speed_ms / 0.5144
 
-    # Ondas com fallback dinâmico robusto baseado no vento real
     if 'hourly' in resp_mar and 'wave_height' in resp_mar['hourly'] and resp_mar['hourly']['wave_height']:
         wave_height = [w if w is not None else 0.5 for w in resp_mar['hourly']['wave_height']]
         wave_dir = [d if d is not None else wind_dir[i] for i, d in enumerate(resp_mar['hourly']['wave_direction'])]
@@ -178,7 +163,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
         wave_height = list(np.clip(wind_speed_ms * 0.15 + 0.3, 0.4, 3.5))
         wave_dir = wind_dir
 
-    # Maré harmônica costeira
     horas = np.arange(n_horas)
     omega_m2 = 2 * np.pi / 12.4206
     omega_s2 = 2 * np.pi / 12.0000
@@ -204,7 +188,6 @@ def carregar_dados_nacionais(lat_val, lon_val):
     df['Onda_Dir'] = df['Onda_Dir_Num'].apply(graus_para_direcao)
     df['Vento_Dir'] = df['Vento_Dir_Num'].apply(graus_para_direcao)
     
-    # Modelo hidrodinâmico estuarino
     delta_mare = df['Mare_Altura(m)'].diff().fillna(0)
     velocidade_ms = np.abs(delta_mare) * 1.8
     velocidade_ms = np.clip(velocidade_ms, 0.1, 2.5)
@@ -353,7 +336,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         pdf.output(temp_file.name)
         return temp_file.name
 
-    # Gerencia PDF via session_state para estabilidade total
     if 'pdf_path' not in st.session_state or st.sidebar.button("Atualizar Cache PDF"):
         st.session_state['pdf_path'] = gerar_pdf(df, nome_local_exibicao, dias_janela)
 
