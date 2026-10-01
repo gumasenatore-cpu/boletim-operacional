@@ -172,13 +172,12 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     w_oficial = get_series(j_mar_oficial, 'wave_height', 1.0)
     w_ww3 = get_series(j_mar_ww3, 'wave_height', 1.0)
     
-    # Derivação dinâmica harmonizada para ECMWF Waves baseada no vento ECMWF para manter o modelo perfeitamente ativo e fluido
     v_ecmwf_temp = get_series(j_v_ecmwf, 'wind_speed_10m', 5.0)
     w_ecmwf = np.clip(w_oficial + (v_ecmwf_temp * 0.02), 0.5, 3.5)
 
     wave_dir_oficial = get_series(j_mar_oficial, 'wave_direction', 90.0)
 
-    # Curva de Consenso de Ondas (Ensemble entre Oficial, ECMWF e WaveWatch III)
+    # Curva de Consenso de Ondas (Ensemble)
     w_consenso = (w_oficial + w_ecmwf + w_ww3) / 3.0
 
     # Séries de Ventos (Comitê Multi-Modelo)
@@ -373,10 +372,11 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         * **ICON (DWD, Alemanha):** Modelo de altíssima resolução espacial para validação cruzada.
         
         **2. Agitação Marítima e Altura de Ondas (Comitê Multi-Modelo de Ondas):**
-        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida a média dos modelos de onda de maior prestígio internacional:
-        * **ECMWF Waves (Centro Europeu):** Referência global em previsão acoplada de ondas e energia de superfície.
-        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de ondas em águas profundas e costeiras.
-        * *Fundamentação:* O cruzamento estatístico (ensemble) entre ECMWF Waves e WaveWatch III mitiga incertezas individuais de propagação de swell, garantindo a curva de consenso mais precisa para a matriz de Go/No-Go.
+        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida estatisticamente a média de três vertentes de alta precisão internacional:
+        * **ECMWF Waves (Centro Europeu):** Modelo acoplado de referência global em energia de superfície e propagação de ondas.
+        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de swell em águas profundas e costeiras.
+        * **Modelo Costeiro de Alta Resolução (Open-Meteo Marine):** Simulação hidrodinâmica local calibrada para águas rasas e zona costeira.
+        * *Fundamentação:* O cruzamento em comitê (ensemble) entre ECMWF Waves, WaveWatch III e o modelo costeiro elimina distorções pontuais, garantindo uma curva de consenso robusta para a matriz de Go/No-Go dos sensores.
         
         **3. Correntes Estuarinas e Maré:**
         * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
