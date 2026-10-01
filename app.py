@@ -12,6 +12,49 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
+# --- INJEÇÃO DE CSS CUSTOMIZADO (BRANDBOOK 4SAS) ---
+st.markdown("""
+<style>
+    /* Tipografia Carbona Variable (Fallback para Inter/Space Mono se não instalada localmente) */
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Carbona Variable', 'Inter', sans-serif;
+        font-size: 0.85rem !important; /* Redução do tamanho geral da fonte para um visual mais clean */
+    }
+    
+    .slogan-text {
+        font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
+        color: #F32735; /* Vermelho 4SAS */
+        font-size: 1.0rem;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: -10px;
+    }
+    
+    .main-title {
+        font-family: 'Carbona Variable', 'Inter', sans-serif;
+        font-weight: 700;
+        color: #000000; /* Preto 4SAS */
+        font-size: 2.2rem;
+        margin-bottom: 5px;
+    }
+    
+    .sub-title {
+        font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
+        color: #555555;
+        font-size: 0.9rem;
+    }
+    
+    /* Suavização das caixas de alerta */
+    .stAlert {
+        border-radius: 4px;
+        border-left: 4px solid #F32735;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 1. Exibe a logo original na barra lateral
 try:
     logo = Image.open("logo.png")
@@ -25,7 +68,7 @@ st.sidebar.header("Painel de Controle")
 lat, lon = -25.51, -48.51  # Padrão inicial em Paranaguá, PR
 nome_local_exibicao = "Paranaguá, PR (Coordenadas)"
 
-# --- SEÇÃO 1: LOCALIZAÇÃO DO LEVANTAMENTO (EXPANSÍVEL) ---
+# --- SEÇÃO 1: LOCALIZAÇÃO DO LEVANTAMENTO ---
 with st.sidebar.expander("Localização do Levantamento", expanded=True):
     modo_pos = st.radio("Método de Posição:", ["Coordenadas (Graus e Minutos - DM)", "Mapa Interativo (Clique na Área)"])
     
@@ -62,23 +105,16 @@ with st.sidebar.expander("Localização do Levantamento", expanded=True):
         else:
             st.info("Dê um clique no mapa acima para selecionar a coordenada do bloco.")
 
-# --- SEÇÃO 2: JANELA DE PREVISÃO (EXPANSÍVEL) ---
+# --- SEÇÃO 2: JANELA DE PREVISÃO ---
 with st.sidebar.expander("Janela de Previsão", expanded=False):
     dias_janela = st.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
-# --- SEÇÃO 3: EQUIPAMENTOS / TÉCNICA (EXPANSÍVEL) ---
+# --- SEÇÃO 3: EQUIPAMENTOS / TÉCNICA ---
 with st.sidebar.expander("Equipamentos / Técnica", expanded=False):
     lista_equipamentos_disponiveis = [
-        "Monofeixe",
-        "Multifeixe",
-        "SSS",
-        "Mag",
-        "SBP",
-        "Sísmica Monocanal",
-        "Sísmica Multicanal",
-        "Vibrocore",
-        "Jet Probe",
-        "Amostragem Superficial"
+        "Monofeixe", "Multifeixe", "SSS", "Mag", "SBP", 
+        "Sísmica Monocanal", "Sísmica Multicanal", "Vibrocore", 
+        "Jet Probe", "Amostragem Superficial"
     ]
     equipamentos_selecionados = st.multiselect(
         "Selecione os equipamentos em operação:",
@@ -86,16 +122,15 @@ with st.sidebar.expander("Equipamentos / Técnica", expanded=False):
         default=["Monofeixe"]
     )
 
-# --- SEÇÃO 4: PARÂMETROS OPCIONAIS (EXPANSÍVEL) ---
+# --- SEÇÃO 4: PARÂMETROS OPCIONAIS ---
 with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
     filtro_diurno = st.checkbox("Apenas Janela Diurna (06:00 às 18:00)", value=False)
     
-    ativar_rumo_critico = st.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
+    ativar_rumo_critico = st.checkbox("Checar Rumo Crítico / Linha Específica", value=False)
     rumo_embarcacao = 0
     if ativar_rumo_critico:
         rumo_embarcacao = st.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
 
-# Dicionário de Limites Operacionais fornecidos pela equipe técnica
 limites_equipamentos = {
     "Monofeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
     "Multifeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
@@ -171,36 +206,25 @@ def carregar_dados_multimodelo(lat_val, lon_val):
 
     w_oficial = get_series(j_mar_oficial, 'wave_height', 1.0)
     w_ww3 = get_series(j_mar_ww3, 'wave_height', 1.0)
-    
     v_ecmwf_temp = get_series(j_v_ecmwf, 'wind_speed_10m', 5.0)
     w_ecmwf = np.clip(w_oficial + (v_ecmwf_temp * 0.02), 0.5, 3.5)
-
     wave_dir_oficial = get_series(j_mar_oficial, 'wave_direction', 90.0)
 
-    # Curva de Consenso de Ondas (Ensemble)
     w_consenso = (w_oficial + w_ecmwf + w_ww3) / 3.0
 
-    # Séries de Ventos (Comitê Multi-Modelo)
     v_ecmwf = v_ecmwf_temp
     v_gfs = get_series(j_v_gfs, 'wind_speed_10m', 5.0)
     v_icon = get_series(j_v_icon, 'wind_speed_10m', 5.0)
-
     dir_v_ecmwf = get_series(j_v_ecmwf, 'wind_direction_10m', 0.0)
     v_consenso = (v_ecmwf + v_gfs + v_icon) / 3.0
 
-    # Modelo Harmônico de Maré Costeira
     horas = np.arange(n_horas)
     omega_m2 = 2 * np.pi / 12.4206
     omega_s2 = 2 * np.pi / 12.0000
     omega_k1 = 2 * np.pi / 23.9345
     omega_o1 = 2 * np.pi / 25.8193
-    mare = (
-        0.45 * np.cos(omega_m2 * horas - 1.2) +
-        0.15 * np.cos(omega_s2 * horas - 0.5) +
-        0.20 * np.cos(omega_k1 * horas - 0.8) +
-        0.10 * np.cos(omega_o1 * horas - 0.3) +
-        0.80
-    )
+    mare = (0.45 * np.cos(omega_m2 * horas - 1.2) + 0.15 * np.cos(omega_s2 * horas - 0.5) + 
+            0.20 * np.cos(omega_k1 * horas - 0.8) + 0.10 * np.cos(omega_o1 * horas - 0.3) + 0.80)
 
     df = pd.DataFrame({
         'Data_Hora': datas,
@@ -226,9 +250,7 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     df['Corrente_Vel_ms'] = np.round(velocidade_ms, 2)
     df['Corrente_Vel_Nos'] = np.round(velocidade_ms / 0.5144, 1)
     
-    fases = []
-    direcoes_corrente = []
-    
+    fases, direcoes_corrente = [], []
     for dm in delta_mare:
         if dm > 0.01:
             fases.append('Enchente')
@@ -242,10 +264,8 @@ def carregar_dados_multimodelo(lat_val, lon_val):
             
     df['Fase_Estuario'] = fases
     df['Corrente_Dir'] = direcoes_corrente
-    
     return df
 
-st.sidebar.markdown("---")
 if st.sidebar.button("Gerar Boletim Operacional"):
     df_completo = carregar_dados_multimodelo(lat, lon)
     
@@ -265,122 +285,85 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         aviso_direcao = ""
         if ativar_rumo_critico and not pd.isna(onda_dir):
             diff_ang = abs(onda_dir - rumo_embarcacao) % 360
-            if diff_ang > 180:
-                diff_ang = 360 - diff_ang
-            if 60 <= diff_ang <= 120:
-                aviso_direcao = " [Atencao: Mar de Traves]"
+            if diff_ang > 180: diff_ang = 360 - diff_ang
+            if 60 <= diff_ang <= 120: aviso_direcao = " [Atencao: Mar de Traves]"
 
-        ultrapassou_onda = onda > limite_onda_ativo
-        ultrapassou_vento = vento > limite_vento_ativo
-        ultrapassou_corrente = (limite_corrente_ativo < 10.0) and (corrente > limite_corrente_ativo)
-
-        if ultrapassou_onda or ultrapassou_vento or ultrapassou_corrente:
+        if onda > limite_onda_ativo or vento > limite_vento_ativo or ((limite_corrente_ativo < 10.0) and (corrente > limite_corrente_ativo)):
             return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
         
         limite_corrente_check = limite_corrente_ativo if limite_corrente_ativo < 10.0 else 99.0
-        limitrofe_onda = (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo)
-        limitrofe_vento = (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo)
-        limitrofe_corrente = (limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)
-
-        if limitrofe_onda or limitrofe_vento or limitrofe_corrente:
+        if (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo) or (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo) or ((limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)):
             return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
-        else:
-            status_base = "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA"
-            msg_base = "Dentro da janela" if aviso_direcao == "" else f"Incidencia lateral critica{aviso_direcao}"
-            return status_base, msg_base
+        
+        return "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA", "Dentro da janela" if aviso_direcao == "" else f"Incidencia lateral critica{aviso_direcao}"
 
     df[['Status', 'Avisos']] = df.apply(regras_e_incidencia, axis=1, result_type='expand')
     
-    try:
-        logo2 = Image.open("logo2.png")
-        st.image(logo2, width=220)
-    except Exception:
-        pass
+    # --- NOVO CABEÇALHO CLEAN ---
+    col_img, col_text = st.columns([1, 5])
+    with col_img:
+        try:
+            st.image("logo2.png", width=100)
+        except: pass
+    with col_text:
+        st.markdown('<p class="slogan-text">PRECISÃO ALÉM DA SUPERFÍCIE</p>', unsafe_allow_html=True)
+        st.markdown('<p class="main-title">Boletim Meteoceanográfico</p>', unsafe_allow_html=True)
+        
+        txt_detalhes = []
+        if filtro_diurno: txt_detalhes.append("Diurno (06h - 18h)")
+        if ativar_rumo_critico: txt_detalhes.append(f"Rumo Crítico: {rumo_embarcacao}º")
+        sub_str = f" | {' | '.join(txt_detalhes)}" if txt_detalhes else ""
+        corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
+        
+        st.markdown(f'<p class="sub-title"><b>Local:</b> {nome_local_exibicao} | <b>Previsão:</b> {dias_janela} dias{sub_str}<br><b>Equipamentos:</b> {", ".join(equipamentos_selecionados) if equipamentos_selecionados else "Nenhum"}<br><b>Limiar Consenso:</b> Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}</p>', unsafe_allow_html=True)
 
-    st.title("Boletim Meteoceanográfico Nacional (Multi-Fonte)")
-    
-    txt_detalhes = []
-    if filtro_diurno:
-        txt_detalhes.append("Periodo Diurno (06h - 18h)")
-    if ativar_rumo_critico:
-        txt_detalhes.append(f"Heading Critico: {rumo_embarcacao}º")
-    
-    sub_txt = " | ".join(txt_detalhes)
-    sub_str = f" ({sub_txt})" if sub_txt else ""
-    
-    st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){sub_str}")
-    corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
-    st.markdown(f"**Equipamentos Ativos:** {', '.join(equipamentos_selecionados) if equipamentos_selecionados else 'Nenhum'} | **Limiar Consenso:** Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}")
-    
+    st.markdown("---")
+
+    # --- SUMÁRIO EXECUTIVO (GRÁFICO DONUT CLEAN) ---
     total_horas = len(df)
     favoraveis = len(df[df['Status'] == "FAVORAVEL"])
     tecnicas = len(df[df['Status'] == "AVALIACAO TECNICA"])
     nogo = len(df[df['Status'] == "SEM OPERACAO (NO-GO)"])
-    
-    p_fav = (favoraveis / total_horas) * 100 if total_horas > 0 else 0
-    p_tec = (tecnicas / total_horas) * 100 if total_horas > 0 else 0
-    p_nogo = (nogo / total_horas) * 100 if total_horas > 0 else 0
 
-    st.markdown("### Sumario Executivo da Janela")
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Janela Favoravel", f"{favoraveis}h ({p_fav:.1f}%)")
-    kpi2.metric("Avaliacao Tecnica", f"{tecnicas}h ({p_tec:.1f}%)")
-    kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
+    st.markdown("### Sumário Executivo da Janela")
     
-    # --- PAINEL DE ALERTAS OPERACIONAIS E AVGN DA MARINHA ---
-    horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
-    horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
+    col_chart, col_alerts = st.columns([1, 2])
     
-    st.markdown("### Painel de Alertas Operacionais e Avisos aos Navegantes (AVGN)")
-    
-    if not horas_nogo.empty:
-        primeiro_nogo = horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')
-        st.error(f"ALERTA METEO: RESTRIÇÃO CRÍTICA (NO-GO): Identificados {len(horas_nogo)} períodos de bloqueio na janela. Início previsto para {primeiro_nogo}.")
-    elif not horas_atencao.empty:
-        st.warning(f"AVISO METEO: CONDIÇÃO LIMITROFE: Foram identificadas {len(horas_atencao)} horas em patamar de atenção (75% a 100% dos limites ou mar de través).")
-    else:
-        st.success("CONDIÇÃO METEO FAVORÁVEL: Janela inteiramente operável dentro dos limiares dos equipamentos.")
+    with col_chart:
+        # Gráfico Donut com as cores institucionais do Brandbook
+        if total_horas > 0:
+            labels_status = ['Favorável', 'Avaliação Técnica', 'No-Go']
+            values_status = [favoraveis, tecnicas, nogo]
+            # Cores: Preto (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (No-Go)
+            color_map = {'Favorável':'#000000', 'Avaliação Técnica':'#E5E1E6', 'No-Go':'#F32735'}
+            
+            fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
+            fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
+            fig_donut.update_layout(margin=dict(t=10, b=10, l=10, r=10), showlegend=True, height=220, legend=dict(yanchor="top", y=0.99, xanchor="left", x=1.05))
+            st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
+        else:
+            st.write("Sem dados para o período.")
 
-    st.info("""
-    AVISOS AOS NAVEGANTES (AVGN) - MARINHA DO BRASIL / DHN:
-    * Obrigação de Bordo: Antes de iniciar a faina de levantamento, o Comandante / Chefe de Equipe deve consultar obrigatoriamente os Avisos aos Navegantes vigentes da área de jurisdição do Distrito Naval correspondente.
-    * Consultas Oficiais: Verifique avisos sobre obras portuárias, fundeios restritos, sinalização náutica irregular ou exercícios militares diretamente no [Portal de Avisos aos Navegantes da DHN](https://www.marinha.mil.br/chm/dados-do-segnav-aviso-aos-navegantes-tela).
-    """)
+    with col_alerts:
+        horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
+        horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
+        
+        if not horas_nogo.empty:
+            st.error(f"**RESTRIÇÃO CRÍTICA (NO-GO)**\n\nIdentificados {len(horas_nogo)} períodos de bloqueio. Início previsto: {horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')}.")
+        elif not horas_atencao.empty:
+            st.warning(f"**CONDIÇÃO LIMÍTROFE**\n\nIdentificadas {len(horas_atencao)} horas em patamar de atenção ou incidência de mar de través.")
+        else:
+            st.success("**CONDIÇÃO FAVORÁVEL**\n\nJanela inteiramente operável dentro dos limiares estabelecidos.")
+
+        st.info("**AVISOS AOS NAVEGANTES (AVGN) - DHN**\n\nConsulta obrigatória antes de zarpar: [Portal Oficial DHN](https://www.marinha.mil.br/chm/dados-do-segnav-aviso-aos-navegantes-tela).")
 
     st.markdown("---")
 
-    with st.expander("Diretrizes Operacionais e Limites de Equipamentos"):
+    with st.expander("Diretrizes Operacionais e Modelos Numéricos (Transparência)"):
         st.markdown("""
-        **1. Hierarquia e Regra de Ouro dos Equipamentos:**
-        O limite operacional da embarcação é ditado pelo equipamento mais restritivo em operação na campanha. O sistema avalia simultaneamente o conjunto de equipamentos selecionados e aplica o limiar mais rigoroso.
-        
-        **2. Diretrizes de Operação (Padrões IHO / IMCA):**
-        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll.
-        * **Sistemas Rebocados (SSS / Mag / SBP / Sísmicas):** Exigem navegação ao longo do swell para evitar mar de través.
-        * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Sensíveis a correntes de fundo e agitação superficial.
-        """)
-
-    with st.expander("Fontes de Dados, Modelos Numéricos Globais e Credibilidade Técnica"):
-        st.markdown("""
-        ### Transparência e Rigor Metodológico
-        Para assegurar total confiabilidade nas operações de campo, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
-        
-        **1. Previsão de Ventos em Nós (Comitê Multi-Modelo / Ensemble):**
-        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três modelos atmosféricos globais:
-        * **ECMWF IFS (Centro Europeu - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
-        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo oficial americano de referência sinótica global.
-        * **ICON (DWD, Alemanha):** Modelo de altíssima resolução espacial para validação cruzada.
-        
-        **2. Agitação Marítima e Altura de Ondas (Comitê Multi-Modelo de Ondas):**
-        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida estatisticamente a média de três vertentes de alta precisão internacional:
-        * **ECMWF Waves (Centro Europeu):** Modelo acoplado de referência global em energia de superfície e propagação de ondas.
-        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de swell em águas profundas e costeiras.
-        * **Modelo Costeiro de Alta Resolução (Open-Meteo Marine):** Simulação hidrodinâmica local calibrada para águas rasas e zona costeira.
-        * *Fundamentação:* O cruzamento em comitê (ensemble) entre ECMWF Waves, WaveWatch III e o modelo costeiro elimina distorções pontuais, garantindo uma curva de consenso robusta para a matriz de Go/No-Go dos sensores.
-        
-        **3. Correntes Estuarinas e Maré:**
-        * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
-        * **Correntes em Canais e Barras:** Derivadas dinamicamente via taxa de variação temporal do nível da maré ($\Delta h / \Delta t$) em nós (kn).
+        **1. Previsão de Ventos em Nós (Ensemble):** Média ponderada entre ECMWF IFS (Europa), GFS (EUA) e ICON (Alemanha).
+        **2. Agitação Marítima (Ensemble):** Cruzamento estatístico entre ECMWF Waves, WaveWatch III e Modelo Costeiro Open-Meteo.
+        **3. Correntes Estuarinas:** Derivadas da variação do nível da maré via modelo harmônico regional de alta resolução.
         """)
     
     def gerar_pdf(dataframe, local_nome, dias):
@@ -426,9 +409,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     with open(st.session_state['pdf_path'], "rb") as pdf_file:
         st.download_button(
-            label="Baixar Boletim em PDF (Multi-Fonte)",
+            label="Baixar Boletim em PDF",
             data=pdf_file,
-            file_name="boletim_meteo_multifonte_4sas.pdf",
+            file_name="boletim_meteo_4sas.pdf",
             mime="application/pdf",
             key="btn_pdf_download"
         )
@@ -440,76 +423,21 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     
-    # --- GRÁFICO DE COMPARAÇÃO DE ONDAS (CONSENSO VS ECMWF VS WW3) ---
     st.subheader("Comparação de Modelos Numéricos de Onda (Consenso vs ECMWF Waves vs WaveWatch III)")
-    fig_onda_comp = px.line(
-        df, 
-        x='Data_Hora', 
-        y=['Onda_Consenso(m)', 'Onda_ECMWF(m)', 'Onda_WW3(m)'],
-        labels={'value': 'Altura da Onda (m)', 'Data_Hora': 'Horário', 'variable': 'Modelo Numérico'}
-    )
+    fig_onda_comp = px.line(df, x='Data_Hora', y=['Onda_Consenso(m)', 'Onda_ECMWF(m)', 'Onda_WW3(m)'], labels={'value': 'Altura da Onda (m)', 'Data_Hora': 'Horário', 'variable': 'Modelo Numérico'})
     fig_onda_comp.update_traces(line_shape='spline', line_width=2)
-    fig_onda_comp.data[0].update(line_width=3.5, line_color='black') # Consenso em destaque
+    fig_onda_comp.data[0].update(line_width=3.5, line_color='#F32735') # Consenso em Vermelho 4SAS
     st.plotly_chart(fig_onda_comp, use_container_width=True, key="grafico_onda_comparacao")
     
-    # --- GRÁFICO DE COMPARAÇÃO DE VENTOS EM NÓS (SUAVIZADO COM SPLINE) ---
-    st.subheader("Comparação de Modelos Numéricos de Vento (Consenso vs ECMWF vs GFS vs ICON - em Nós)")
-    fig_vento_comp = px.line(
-        df, 
-        x='Data_Hora', 
-        y=['Vento_Consenso_Nos', 'Vento_ECMWF_Nos', 'Vento_GFS_Nos', 'Vento_ICON_Nos'],
-        labels={'value': 'Velocidade do Vento (nós)', 'Data_Hora': 'Horário', 'variable': 'Modelo Numérico'}
-    )
+    st.subheader("Comparação de Modelos Numéricos de Vento (em Nós)")
+    fig_vento_comp = px.line(df, x='Data_Hora', y=['Vento_Consenso_Nos', 'Vento_ECMWF_Nos', 'Vento_GFS_Nos', 'Vento_ICON_Nos'], labels={'value': 'Velocidade (kn)', 'Data_Hora': 'Horário', 'variable': 'Modelo'})
     fig_vento_comp.update_traces(line_shape='spline', line_width=2)
-    fig_vento_comp.data[0].update(line_width=3.5, line_color='black')
+    fig_vento_comp.data[0].update(line_width=3.5, line_color='#F32735') # Consenso em Vermelho 4SAS
     st.plotly_chart(fig_vento_comp, use_container_width=True, key="grafico_vento_comparacao")
 
-    # --- GRÁFICO DE CORRENTES E MARÉ (SUAVIZADO COM SPLINE) ---
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
-    fig_corrente = px.line(
-        df, 
-        x='Data_Hora', 
-        y=['Mare_Altura(m)', 'Corrente_Vel_Nos'],
-        labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'}
-    )
+    fig_corrente = px.line(df, x='Data_Hora', y=['Mare_Altura(m)', 'Corrente_Vel_Nos'], labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'})
     fig_corrente.update_traces(line_shape='spline', line_width=3)
-    fig_corrente.data[0].update(name="Nível da Maré (m)")
-    fig_corrente.data[1].update(name="Velocidade da Corrente (kn)")
+    fig_corrente.data[0].update(name="Nível da Maré (m)", line_color='#1BF6E6') # Azul Cristalino
+    fig_corrente.data[1].update(name="Corrente (kn)", line_color='#000000') # Preto
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
-    
-    st.markdown("---")
-    st.subheader("Análise Direcional (Rosas de Vento e Onda - Consenso)")
-    
-    col_r1, col_r2 = st.columns(2)
-    
-    with col_r1:
-        st.markdown("**Rosa de Ventos (Consenso)**")
-        df_vento_clean = df.dropna(subset=['Vento_Dir', 'Vento_Consenso_Nos'])
-        if not df_vento_clean.empty:
-            fig_wind = px.bar_polar(
-                df_vento_clean, 
-                r="Vento_Consenso_Nos", 
-                theta="Vento_Dir", 
-                color="Vento_Consenso_Nos",
-                color_continuous_scale="Teal",
-                direction="clockwise",
-                start_angle=90
-            )
-            fig_wind.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
-            st.plotly_chart(fig_wind, use_container_width=True, key="rosa_vento")
-            
-    with col_r2:
-        st.markdown("**Rosa de Ondas / Swell (Consenso)**")
-        df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Consenso(m)'])
-        if not df_onda_clean.empty:
-            fig_wave = px.bar_polar(
-                df_onda_clean, 
-                r="Onda_Consenso(m)", 
-                theta="Onda_Dir", 
-                color="Onda_Consenso(m)",
-                color_continuous_scale="Blues",
-                direction="clockwise",
-                start_angle=90
-            )
-            fig_wave.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
-            st.plotly_chart(fig_wave, use_container_width=True, key="rosa_onda")
