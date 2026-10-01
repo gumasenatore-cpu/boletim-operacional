@@ -26,25 +26,28 @@ st.markdown("""
     .slogan-text {
         font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
         color: #F32735;
-        font-size: 1.0rem;
-        font-weight: 600;
-        letter-spacing: 1px;
+        font-size: 0.72rem;
+        font-weight: 400; /* Sem negrito */
+        width: 220px; /* Largura exata da logo */
+        display: block;
+        text-align: justify;
+        text-align-last: justify; /* Força o texto a ocupar 100% dos 220px */
         text-transform: uppercase;
-        margin-top: 5px;
-        margin-bottom: 20px;
+        margin-top: -5px;
+        margin-bottom: 25px;
     }
     
     .main-title {
         font-family: 'Carbona Variable', 'Inter', sans-serif;
         font-weight: 700;
-        color: #000000;
-        font-size: 2.2rem;
+        color: #FFFFFF; /* Título na cor branca */
+        font-size: 2.8rem; /* Tamanho levemente maior */
         margin-bottom: 5px;
     }
     
     .sub-title {
         font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
-        color: #555555;
+        color: #AAAAAA; /* Ajustado para melhor contraste com temas escuros */
         font-size: 0.9rem;
     }
     
@@ -464,6 +467,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
     fig_corrente = px.line(df, x='Data_Hora', y=['Mare_Altura(m)', 'Corrente_Vel_Nos'], labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'})
     fig_corrente.update_traces(line_shape='spline', line_width=3)
+    # Voltando para as cores padrão e comportamento livre do Plotly
     fig_corrente.data[0].update(name="Nível da Maré (m)") 
     fig_corrente.data[1].update(name="Velocidade da Corrente (kn)")
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
