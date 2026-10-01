@@ -439,6 +439,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     fig_vento_comp = px.line(df, x='Data_Hora', y=['Vento_Consenso_Nos', 'Vento_ECMWF_Nos', 'Vento_GFS_Nos', 'Vento_ICON_Nos'], labels={'value': 'Velocidade (kn)', 'Data_Hora': 'Horário', 'variable': 'Modelo'})
     fig_vento_comp.update_traces(line_shape='spline', line_width=2)
     fig_vento_comp.data[0].update(line_width=3.5, line_color='#F32735') # Consenso em Vermelho 4SAS
+    fig_vento_comp.data[3].update(line_color='#FFD700') # ICON em Amarelo
     st.plotly_chart(fig_vento_comp, use_container_width=True, key="grafico_vento_comparacao")
 
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
