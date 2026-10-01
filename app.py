@@ -312,8 +312,8 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         if total_horas > 0:
             labels_status = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             values_status = [favoraveis, tecnicas, nogo]
-            # Cores: Cinza (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (Sem Operação)
-            color_map = {'FAVORAVEL':'#888888', 'AVALIACAO TECNICA':'#E5E1E6', 'SEM OPERACAO':'#F32735'}
+            # Cores: Verde Leve (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (Sem Operação)
+            color_map = {'FAVORAVEL':'#A5D6A7', 'AVALIACAO TECNICA':'#E5E1E6', 'SEM OPERACAO':'#F32735'}
             
             fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
             fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
