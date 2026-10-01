@@ -23,31 +23,9 @@ st.markdown("""
         font-size: 0.85rem !important;
     }
     
-    .slogan-text {
-        font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
-        color: #F32735;
-        font-size: 0.72rem;
-        font-weight: 400; /* Sem negrito */
-        width: 220px; /* Largura exata da logo */
-        display: block;
-        text-align: justify;
-        text-align-last: justify; /* Força o texto a ocupar 100% dos 220px */
-        text-transform: uppercase;
-        margin-top: -5px;
-        margin-bottom: 25px;
-    }
-    
-    .main-title {
-        font-family: 'Carbona Variable', 'Inter', sans-serif;
-        font-weight: 700;
-        color: #FFFFFF; /* Título na cor branca */
-        font-size: 2.8rem; /* Tamanho levemente maior */
-        margin-bottom: 5px;
-    }
-    
     .sub-title {
         font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
-        color: #AAAAAA; /* Ajustado para melhor contraste com temas escuros */
+        color: #AAAAAA;
         font-size: 0.9rem;
     }
     
@@ -292,7 +270,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             if 60 <= diff_ang <= 120: aviso_direcao = " [Atencao: Mar de Traves]"
 
         if onda > limite_onda_ativo or vento > limite_vento_ativo or ((limite_corrente_ativo < 10.0) and (corrente > limite_corrente_ativo)):
-            return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
+            return "SEM OPERACAO", f"Limite critico excedido{aviso_direcao}"
         
         limite_corrente_check = limite_corrente_ativo if limite_corrente_ativo < 10.0 else 99.0
         if (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo) or (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo) or ((limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)):
@@ -308,8 +286,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     except Exception:
         pass
         
-    st.markdown('<p class="slogan-text">PRECISÃO ALÉM DA SUPERFÍCIE</p>', unsafe_allow_html=True)
-    st.markdown('<p class="main-title">Boletim Meteoceanográfico</p>', unsafe_allow_html=True)
+    st.markdown("### Boletim Meteoceanográfico")
     
     txt_detalhes = []
     if filtro_diurno: txt_detalhes.append("Diurno (06h - 18h)")
@@ -325,7 +302,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     total_horas = len(df)
     favoraveis = len(df[df['Status'] == "FAVORAVEL"])
     tecnicas = len(df[df['Status'] == "AVALIACAO TECNICA"])
-    nogo = len(df[df['Status'] == "SEM OPERACAO (NO-GO)"])
+    nogo = len(df[df['Status'] == "SEM OPERACAO"])
 
     st.markdown("### Sumário Executivo da Janela")
     
@@ -333,10 +310,10 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     with col_chart:
         if total_horas > 0:
-            labels_status = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO (NO-GO)']
+            labels_status = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             values_status = [favoraveis, tecnicas, nogo]
-            # Cores: Cinza (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (No-Go)
-            color_map = {'FAVORAVEL':'#888888', 'AVALIACAO TECNICA':'#E5E1E6', 'SEM OPERACAO (NO-GO)':'#F32735'}
+            # Cores: Cinza (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (Sem Operação)
+            color_map = {'FAVORAVEL':'#888888', 'AVALIACAO TECNICA':'#E5E1E6', 'SEM OPERACAO':'#F32735'}
             
             fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
             fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
@@ -346,11 +323,11 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             st.write("Sem dados para o período.")
 
     with col_alerts:
-        horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
+        horas_nogo = df[df['Status'] == "SEM OPERACAO"]
         horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
         
         if not horas_nogo.empty:
-            st.error(f"**RESTRIÇÃO CRÍTICA (NO-GO)**\n\nIdentificados {len(horas_nogo)} períodos de bloqueio. Início previsto: {horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')}.")
+            st.error(f"**RESTRIÇÃO CRÍTICA**\n\nIdentificados {len(horas_nogo)} períodos de bloqueio. Início previsto: {horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')}.")
         elif not horas_atencao.empty:
             st.warning(f"**CONDIÇÃO LIMÍTROFE**\n\nIdentificadas {len(horas_atencao)} horas em patamar de atenção ou incidência de mar de través.")
         else:
@@ -467,7 +444,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
     fig_corrente = px.line(df, x='Data_Hora', y=['Mare_Altura(m)', 'Corrente_Vel_Nos'], labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'})
     fig_corrente.update_traces(line_shape='spline', line_width=3)
-    # Voltando para as cores padrão e comportamento livre do Plotly
     fig_corrente.data[0].update(name="Nível da Maré (m)") 
     fig_corrente.data[1].update(name="Velocidade da Corrente (kn)")
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
