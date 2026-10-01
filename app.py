@@ -159,7 +159,12 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     def get_series(json_obj, key, default_val=10.0):
         if 'hourly' in json_obj and key in json_obj['hourly'] and json_obj['hourly'][key]:
             arr = json_obj['hourly'][key]
-            return np.array([v if v is not None else default_val for v in arr])
+            arr_clean = [v if v is not None else default_val for v in arr]
+            # Garante rigorosamente o mesmo tamanho do eixo temporal
+            if len(arr_clean) >= n_horas:
+                return np.array(arr_clean[:n_horas])
+            else:
+                return np.pad(arr_clean, (0, n_horas - len(arr_clean)), 'edge')
         return np.array([default_val] * n_horas)
 
     wave_height_oficial = get_series(j_mar, 'wave_height', 0.8)
@@ -324,7 +329,6 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Sensíveis a correntes de fundo e agitação superficial.
         """)
 
-    # --- TEXTO TÉCNICO EXPANDIDO E ACESSÍVEL PARA AUDITORIAS E CLIENTES ---
     with st.expander("Fontes de Dados, Modelos Numéricos Globais e Credibilidade Técnica"):
         st.markdown("""
         ### Transparência e Rigor Metodológico
@@ -465,7 +469,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
                 df_onda_clean, 
                 r="Onda_Oficial(m)", 
                 theta="Onda_Dir", 
-                color="Onda_Decoracao" if False else "Onda_Oficial(m)",
+                color="Onda_Oficial(m)",
                 color_continuous_scale="Blues",
                 direction="clockwise",
                 start_angle=90
