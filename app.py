@@ -31,7 +31,7 @@ with st.sidebar.expander("Localização do Levantamento", expanded=True):
     
     if modo_pos == "Coordenadas (Graus e Minutos - DM)":
         st.markdown("**Insira as Coordenadas (DM):**")
-        col1, col2 = st.columns(2)
+        col1, col2 = st.sidebar.columns(2)
         with col1:
             lat_graus = st.number_input("Lat Graus", value=-25, step=1)
             lat_min = st.number_input("Lat Minutos", value=30.60, format="%.2f", step=0.01)
@@ -160,7 +160,6 @@ def carregar_dados_multimodelo(lat_val, lon_val):
         if 'hourly' in json_obj and key in json_obj['hourly'] and json_obj['hourly'][key]:
             arr = json_obj['hourly'][key]
             arr_clean = [v if v is not None else default_val for v in arr]
-            # Garante rigorosamente o mesmo tamanho do eixo temporal
             if len(arr_clean) >= n_horas:
                 return np.array(arr_clean[:n_horas])
             else:
@@ -175,8 +174,6 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     v_icon = get_series(j_v_icon, 'wind_speed_10m', 5.0) / 0.5144
 
     dir_v_ecmwf = get_series(j_v_ecmwf, 'wind_direction_10m', 0.0)
-
-    wave_height_derivada = np.clip(v_ecmwf * 0.12 + 0.3, 0.4, 3.5)
     v_consenso = (v_ecmwf + v_gfs + v_icon) / 3.0
 
     # Modelo Harmônico de Maré Costeira
@@ -197,7 +194,6 @@ def carregar_dados_multimodelo(lat_val, lon_val):
         'Data_Hora': datas,
         'Mare_Altura(m)': np.round(mare, 2),
         'Onda_Oficial(m)': np.round(wave_height_oficial, 2),
-        'Onda_Derivada_Vento(m)': np.round(wave_height_derivada, 2),
         'Onda_Dir_Num': wave_dir_oficial,
         'Vento_Consenso_Nos': np.round(v_consenso, 1),
         'Vento_ECMWF_Nos': np.round(v_ecmwf, 1),
@@ -329,23 +325,21 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Sensíveis a correntes de fundo e agitação superficial.
         """)
 
+    # --- TEXTO TÉCNICO RIGOROSO SEM MENÇÃO A CLIENTES ---
     with st.expander("Fontes de Dados, Modelos Numéricos Globais e Credibilidade Técnica"):
         st.markdown("""
         ### Transparência e Rigor Metodológico
-        Para atender às exigências de clientes corporativos de alto rigor técnico, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
+        Para assegurar total confiabilidade nas operações de campo, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
         
         **1. Previsão de Ventos (Comitê Multi-Modelo / Ensemble):**
-        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar erros individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) entre três dos modelos numéricos atmosféricos mais respeitados do mundo:
+        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) entre três dos modelos numéricos atmosféricos mais respeitados do mundo:
         * **ECMWF IFS (Centro Europeu de Previsão de Tempo a Médio Prazo - Europa):** Considerado o padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
         * **GFS (Global Forecast System - NOAA, Estados Unidos):** O modelo meteorológico oficial americano de referência sinótica global.
         * **ICON (Icosahedral Nonhydrostatic - DWD, Alemanha):** Modelo de altíssima resolução espacial, utilizado para validação cruzada regional.
-        * *O que isso significa para o cliente:* Ao cruzar três institutos independentes, eliminamos distorções isoladas de previsão, garantindo que a tomada de decisão seja respaldada por um consenso científico internacional.
+        * *Fundamentação:* Ao cruzar três institutos independentes, eliminamos distorções isoladas de previsão, garantindo que a tomada de decisão em campo seja respaldada por um consenso científico internacional.
         
-        **2. Agitação Marítima e Altura de Ondas (Redundância Dual):**
-        O boletim apresenta duas abordagens complementares para a altura de ondas e swell:
+        **2. Agitação Marítima e Altura de Ondas:**
         * **Onda Oficial (API Marine / Open-Meteo):** Dados oceanográficos diretos que simulam a propagação real de vagas e swell gerados em mar aberto e sua chegada à costa. É a fonte principal que alimenta a matriz de Go/No-Go dos equipamentos.
-        * **Modelo Derivado da Física do Vento:** Uma segunda curva matemática que estima a altura da onda gerada localmente pelo atrito do vento sobre a superfície da água. 
-        * *O que isso significa para o cliente:* Disponibilizar ambas as curvas em gráficos comparativos permite que a equipe técnica avalie a consistência física da previsão em tempo real, garantindo segurança operacional absoluta.
         
         **3. Correntes Estuarinas e Maré:**
         * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
@@ -406,17 +400,16 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     
     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
     
-    # --- GRÁFICO DE COMPARAÇÃO DE ONDAS ---
-    st.subheader("Comparação de Fontes de Onda (API Marine Oficial vs Modelo Derivado da Física do Vento)")
-    fig_onda_comp = px.line(
+    # --- GRÁFICO DE ALTURA DE ONDA (OFICIAL) ---
+    st.subheader("Análise Temporal de Agitação Marítima (Altura da Onda / Swell)")
+    fig_onda = px.line(
         df, 
         x='Data_Hora', 
-        y=['Onda_Oficial(m)', 'Onda_Derivada_Vento(m)'],
-        labels={'value': 'Altura da Onda (m)', 'Data_Hora': 'Horário', 'variable': 'Fonte / Modelo'}
+        y='Onda_Oficial(m)',
+        labels={'Onda_Oficial(m)': 'Altura da Onda (m)', 'Data_Hora': 'Horário'}
     )
-    fig_onda_comp.data[0].update(line_width=3, line_color='#0083B8')
-    fig_onda_comp.data[1].update(line_width=2, line_color='orange')
-    st.plotly_chart(fig_onda_comp, use_container_width=True, key="grafico_onda_comparacao")
+    fig_onda.update_traces(line_color='#0083B8', line_width=3)
+    st.plotly_chart(fig_onda, use_container_width=True, key="grafico_onda_oficial")
     
     # --- GRÁFICO DE COMPARAÇÃO DE VENTOS ---
     st.subheader("Comparação de Modelos Numéricos de Vento (Consenso vs ECMWF vs GFS vs ICON)")
