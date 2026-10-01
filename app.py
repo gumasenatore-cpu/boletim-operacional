@@ -15,28 +15,29 @@ st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 # --- INJEÇÃO DE CSS CUSTOMIZADO (BRANDBOOK 4SAS) ---
 st.markdown("""
 <style>
-    /* Tipografia Carbona Variable (Fallback para Inter/Space Mono se não instalada localmente) */
+    /* Tipografia Carbona Variable (Fallback para Inter/Space Mono) */
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Carbona Variable', 'Inter', sans-serif;
-        font-size: 0.85rem !important; /* Redução do tamanho geral da fonte para um visual mais clean */
+        font-size: 0.85rem !important;
     }
     
     .slogan-text {
         font-family: 'Carbona Variable Mono', 'Space Mono', monospace;
-        color: #F32735; /* Vermelho 4SAS */
+        color: #F32735;
         font-size: 1.0rem;
         font-weight: 600;
         letter-spacing: 1px;
         text-transform: uppercase;
-        margin-bottom: -10px;
+        margin-top: 5px;
+        margin-bottom: 20px;
     }
     
     .main-title {
         font-family: 'Carbona Variable', 'Inter', sans-serif;
         font-weight: 700;
-        color: #000000; /* Preto 4SAS */
+        color: #000000;
         font-size: 2.2rem;
         margin-bottom: 5px;
     }
@@ -47,7 +48,6 @@ st.markdown("""
         font-size: 0.9rem;
     }
     
-    /* Suavização das caixas de alerta */
     .stAlert {
         border-radius: 4px;
         border-left: 4px solid #F32735;
@@ -300,22 +300,21 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     df[['Status', 'Avisos']] = df.apply(regras_e_incidencia, axis=1, result_type='expand')
     
     # --- NOVO CABEÇALHO CLEAN ---
-    col_img, col_text = st.columns([1, 5])
-    with col_img:
-        try:
-            st.image("logo2.png", width=100)
-        except: pass
-    with col_text:
-        st.markdown('<p class="slogan-text">PRECISÃO ALÉM DA SUPERFÍCIE</p>', unsafe_allow_html=True)
-        st.markdown('<p class="main-title">Boletim Meteoceanográfico</p>', unsafe_allow_html=True)
+    try:
+        st.image("logo2.png", width=220)
+    except Exception:
+        pass
         
-        txt_detalhes = []
-        if filtro_diurno: txt_detalhes.append("Diurno (06h - 18h)")
-        if ativar_rumo_critico: txt_detalhes.append(f"Rumo Crítico: {rumo_embarcacao}º")
-        sub_str = f" | {' | '.join(txt_detalhes)}" if txt_detalhes else ""
-        corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
-        
-        st.markdown(f'<p class="sub-title"><b>Local:</b> {nome_local_exibicao} | <b>Previsão:</b> {dias_janela} dias{sub_str}<br><b>Equipamentos:</b> {", ".join(equipamentos_selecionados) if equipamentos_selecionados else "Nenhum"}<br><b>Limiar Consenso:</b> Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}</p>', unsafe_allow_html=True)
+    st.markdown('<p class="slogan-text">PRECISÃO ALÉM DA SUPERFÍCIE</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">Boletim Meteoceanográfico</p>', unsafe_allow_html=True)
+    
+    txt_detalhes = []
+    if filtro_diurno: txt_detalhes.append("Diurno (06h - 18h)")
+    if ativar_rumo_critico: txt_detalhes.append(f"Rumo Crítico: {rumo_embarcacao}º")
+    sub_str = f" | {' | '.join(txt_detalhes)}" if txt_detalhes else ""
+    corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
+    
+    st.markdown(f'<p class="sub-title"><b>Local:</b> {nome_local_exibicao} | <b>Previsão:</b> {dias_janela} dias{sub_str}<br><b>Equipamentos:</b> {", ".join(equipamentos_selecionados) if equipamentos_selecionados else "Nenhum"}<br><b>Limiar Consenso:</b> Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}</p>', unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -330,12 +329,11 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     col_chart, col_alerts = st.columns([1, 2])
     
     with col_chart:
-        # Gráfico Donut com as cores institucionais do Brandbook
         if total_horas > 0:
-            labels_status = ['Favorável', 'Avaliação Técnica', 'No-Go']
+            labels_status = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO (NO-GO)']
             values_status = [favoraveis, tecnicas, nogo]
-            # Cores: Preto (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (No-Go)
-            color_map = {'Favorável':'#000000', 'Avaliação Técnica':'#E5E1E6', 'No-Go':'#F32735'}
+            # Cores: Cinza (Favorável), Cinza Submerso (Atenção), Vermelho 4SAS (No-Go)
+            color_map = {'FAVORAVEL':'#888888', 'AVALIACAO TECNICA':'#E5E1E6', 'SEM OPERACAO (NO-GO)':'#F32735'}
             
             fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
             fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
@@ -359,11 +357,39 @@ if st.sidebar.button("Gerar Boletim Operacional"):
 
     st.markdown("---")
 
-    with st.expander("Diretrizes Operacionais e Modelos Numéricos (Transparência)"):
+    # --- DIRETRIZES E FONTES ---
+    with st.expander("Diretrizes Operacionais e Limites de Equipamentos"):
         st.markdown("""
-        **1. Previsão de Ventos em Nós (Ensemble):** Média ponderada entre ECMWF IFS (Europa), GFS (EUA) e ICON (Alemanha).
-        **2. Agitação Marítima (Ensemble):** Cruzamento estatístico entre ECMWF Waves, WaveWatch III e Modelo Costeiro Open-Meteo.
-        **3. Correntes Estuarinas:** Derivadas da variação do nível da maré via modelo harmônico regional de alta resolução.
+        **1. Hierarquia e Regra de Ouro dos Equipamentos:**
+        O limite operacional da embarcação é ditado pelo equipamento mais restritivo em operação na campanha. O sistema avalia simultaneamente o conjunto de equipamentos selecionados e aplica o limiar mais rigoroso.
+        
+        **2. Diretrizes de Operação (Padrões IHO / IMCA):**
+        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll.
+        * **Sistemas Rebocados (SSS / Mag / SBP / Sísmicas):** Exigem navegação ao longo do swell para evitar mar de través.
+        * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Sensíveis a correntes de fundo e agitação superficial.
+        """)
+
+    with st.expander("Fontes de Dados, Modelos Numéricos Globais e Credibilidade Técnica"):
+        st.markdown("""
+        ### Transparência e Rigor Metodológico
+        Para assegurar total confiabilidade nas operações de campo, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
+        
+        **1. Previsão de Ventos em Nós (Comitê Multi-Modelo / Ensemble):**
+        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três modelos atmosféricos globais:
+        * **ECMWF IFS (Centro Europeu - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
+        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo oficial americano de referência sinótica global.
+        * **ICON (DWD, Alemanha):** Modelo de altíssima resolução espacial para validação cruzada.
+        
+        **2. Agitação Marítima e Altura de Ondas (Comitê Multi-Modelo de Ondas):**
+        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida estatisticamente a média de três vertentes de alta precisão internacional:
+        * **ECMWF Waves (Centro Europeu):** Modelo acoplado de referência global em energia de superfície e propagação de ondas.
+        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de swell em águas profundas e costeiras.
+        * **Modelo Costeiro de Alta Resolução (Open-Meteo Marine):** Simulação hidrodinâmica local calibrada para águas rasas e zona costeira.
+        * *Fundamentação:* O cruzamento em comitê (ensemble) entre ECMWF Waves, WaveWatch III e o modelo costeiro elimina distorções pontuais, garantindo uma curva de consenso robusta para a matriz de Go/No-Go dos sensores.
+        
+        **3. Correntes Estuarinas e Maré:**
+        * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
+        * **Correntes em Canais e Barras:** Derivadas dinamicamente via taxa de variação temporal do nível da maré ($\Delta h / \Delta t$) em nós (kn).
         """)
     
     def gerar_pdf(dataframe, local_nome, dias):
@@ -438,6 +464,43 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     st.subheader("Análise Temporal de Correntes Estuarinas e Maré")
     fig_corrente = px.line(df, x='Data_Hora', y=['Mare_Altura(m)', 'Corrente_Vel_Nos'], labels={'value': 'Intensidade / Nível', 'Data_Hora': 'Horário', 'variable': 'Parâmetro'})
     fig_corrente.update_traces(line_shape='spline', line_width=3)
-    fig_corrente.data[0].update(name="Nível da Maré (m)", line_color='#1BF6E6') # Azul Cristalino
-    fig_corrente.data[1].update(name="Corrente (kn)", line_color='#000000') # Preto
+    fig_corrente.data[0].update(name="Nível da Maré (m)") 
+    fig_corrente.data[1].update(name="Velocidade da Corrente (kn)")
     st.plotly_chart(fig_corrente, use_container_width=True, key="grafico_temporal_correntes")
+    
+    st.markdown("---")
+    st.subheader("Análise Direcional (Rosas de Vento e Onda - Consenso)")
+    
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        st.markdown("**Rosa de Ventos (Consenso)**")
+        df_vento_clean = df.dropna(subset=['Vento_Dir', 'Vento_Consenso_Nos'])
+        if not df_vento_clean.empty:
+            fig_wind = px.bar_polar(
+                df_vento_clean, 
+                r="Vento_Consenso_Nos", 
+                theta="Vento_Dir", 
+                color="Vento_Consenso_Nos",
+                color_continuous_scale="Teal",
+                direction="clockwise",
+                start_angle=90
+            )
+            fig_wind.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig_wind, use_container_width=True, key="rosa_vento")
+            
+    with col_r2:
+        st.markdown("**Rosa de Ondas / Swell (Consenso)**")
+        df_onda_clean = df.dropna(subset=['Onda_Dir', 'Onda_Consenso(m)'])
+        if not df_onda_clean.empty:
+            fig_wave = px.bar_polar(
+                df_onda_clean, 
+                r="Onda_Consenso(m)", 
+                theta="Onda_Dir", 
+                color="Onda_Consenso(m)",
+                color_continuous_scale="Blues",
+                direction="clockwise",
+                start_angle=90
+            )
+            fig_wave.update_layout(polar=dict(radialaxis=dict(visible=True)), margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig_wave, use_container_width=True, key="rosa_onda")
