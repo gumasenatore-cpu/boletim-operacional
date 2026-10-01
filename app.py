@@ -313,26 +313,24 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     kpi2.metric("Avaliacao Tecnica", f"{tecnicas}h ({p_tec:.1f}%)")
     kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
     
-    # --- SISTEMA DE ALERTAS OPERACIONAIS E AVGN DA MARINHA ---
+    # --- PAINEL DE ALERTAS OPERACIONAIS E AVGN DA MARINHA (SEM EMOJI) ---
     horas_nogo = df[df['Status'] == "SEM OPERACAO (NO-GO)"]
     horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
     
-    st.markdown("### 🚨 Painel de Alertas Operacionais e Avisos aos Navegantes (AVGN)")
+    st.markdown("### Painel de Alertas Operacionais e Avisos aos Navegantes (AVGN)")
     
-    # Bloco de Alerta Meteoceanográfico Automático
     if not horas_nogo.empty:
         primeiro_nogo = horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')
-        st.error(f"**ALERTA METEO: RESTRIÇÃO CRÍTICA (NO-GO):** Identificados {len(horas_nogo)} períodos de bloqueio na janela. Início previsto para **{primeiro_nogo}**.")
+        st.error(f"ALERTA METEO: RESTRIÇÃO CRÍTICA (NO-GO): Identificados {len(horas_nogo)} períodos de bloqueio na janela. Início previsto para {primeiro_nogo}.")
     elif not horas_atencao.empty:
-        st.warning(f"**AVISO METEO: CONDIÇÃO LIMITROFE:** Foram identificadas **{len(horas_atencao)} horas** em patamar de atenção (75% a 100% dos limites ou mar de través).")
+        st.warning(f"AVISO METEO: CONDIÇÃO LIMITROFE: Foram identificadas {len(horas_atencao)} horas em patamar de atenção (75% a 100% dos limites ou mar de través).")
     else:
-        st.success("**CONDIÇÃO METEO FAVORÁVEL:** Janela inteiramente operável dentro dos limiares dos equipamentos.")
+        st.success("CONDIÇÃO METEO FAVORÁVEL: Janela inteiramente operável dentro dos limiares dos equipamentos.")
 
-    # Bloco de Alerta Oficial da Marinha do Brasil (AVGN / DHN)
     st.info("""
-    ⚓ **AVISOS AOS NAVEGANTES (AVGN) - MARINHA DO BRASIL / DHN:**
-    * **Obrigação de Bordo:** Antes de iniciar a faina de levantamento, o Comandante / Chefe de Equipe deve consultar obrigatoriamente os Avisos aos Navegantes vigentes da área de jurisdição do Distrito Naval correspondente.
-    * **Consultas Oficiais:** Verifique avisos sobre obras portuárias, fundeios restritos, sinalização náutica irregular ou exercícios militares diretamente no [Portal de Avisos aos Navegantes da DHN](https://www.marinha.mil.br/chm/avisos-aos-navegantes).
+    AVISOS AOS NAVEGANTES (AVGN) - MARINHA DO BRASIL / DHN:
+    * Obrigação de Bordo: Antes de iniciar a faina de levantamento, o Comandante / Chefe de Equipe deve consultar obrigatoriamente os Avisos aos Navegantes vigentes da área de jurisdição do Distrito Naval correspondente.
+    * Consultas Oficiais: Verifique avisos sobre obras portuárias, fundeios restritos, sinalização náutica irregular ou exercícios militares diretamente no [Portal de Avisos aos Navegantes da DHN](https://www.marinha.mil.br/chm/dados-do-segnav-aviso-aos-navegantes-tela).
     """)
 
     st.markdown("---")
