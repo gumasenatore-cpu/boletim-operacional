@@ -50,7 +50,8 @@ with st.sidebar.expander("Localização do Levantamento", expanded=True):
     
     else:
         st.markdown("Clique no mapa para definir o ponto de survey:")
-        m = folium.Map(location=[-22.42, -41.02], zoom_start=6, tiles="CartoDB positron")
+        # Tile padrão do OpenStreetMap corrigido (sem exigência de chave de API)
+        m = folium.Map(location=[-22.42, -41.02], zoom_start=6, tiles="OpenStreetMap")
         m.add_child(folium.LatLngPopup())
         map_data = st_folium(m, height=250, width="100%")
         
