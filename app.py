@@ -50,7 +50,6 @@ with st.sidebar.expander("Localização do Levantamento", expanded=True):
     
     else:
         st.markdown("Clique no mapa para definir o ponto de survey:")
-        # Tile padrão do OpenStreetMap corrigido (sem exigência de chave de API)
         m = folium.Map(location=[-22.42, -41.02], zoom_start=6, tiles="OpenStreetMap")
         m.add_child(folium.LatLngPopup())
         map_data = st_folium(m, height=250, width="100%")
@@ -67,20 +66,24 @@ with st.sidebar.expander("Localização do Levantamento", expanded=True):
 with st.sidebar.expander("Janela de Previsão", expanded=False):
     dias_janela = st.slider("Selecione os dias (1 a 15):", min_value=1, max_value=15, value=4)
 
-# --- SEÇÃO 3: SELEÇÃO DE SENSORES (EXPANSÍVEL) ---
-with st.sidebar.expander("Seleção de Sensores", expanded=False):
-    lista_sensores_disponiveis = [
-        "Ecobatímetro Monofeixe",
-        "Ecobatímetro Multifeixe (Multibeam)",
-        "Magnetômetro (Rebocado)",
-        "Sidescan + SBP (Integrado Rebocado)",
-        "Sistema Sísmico Monocanal (Rebocado)",
-        "Sistema Sísmico Multicanal (Rebocado)"
+# --- SEÇÃO 3: EQUIPAMENTOS / TÉCNICA (EXPANSÍVEL) ---
+with st.sidebar.expander("Equipamentos / Técnica", expanded=False):
+    lista_equipamentos_disponiveis = [
+        "Monofeixe",
+        "Multifeixe",
+        "SSS",
+        "Mag",
+        "SBP",
+        "Sísmica Monocanal",
+        "Sísmica Multicanal",
+        "Vibrocore",
+        "Jet Probe",
+        "Amostragem Superficial"
     ]
-    sensores_selecionados = st.multiselect(
-        "Selecione os sensores em operação:",
-        options=lista_sensores_disponiveis,
-        default=["Ecobatímetro Monofeixe"]
+    equipamentos_selecionados = st.multiselect(
+        "Selecione os equipamentos em operação:",
+        options=lista_equipamentos_disponiveis,
+        default=["Monofeixe"]
     )
 
 # --- SEÇÃO 4: PARÂMETROS OPCIONAIS (EXPANSÍVEL) ---
@@ -90,24 +93,30 @@ with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
     ativar_rumo_critico = st.checkbox("Checar Rumo Crítico / Linha Específica", value=False, help="Ative para avaliar a incidência lateral de ondas (mar de través) em um bloco ou linha com direção específica.")
     rumo_embarcacao = 0
     if ativar_rumo_critico:
-        rumo_embarcacao = st.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
+        rumo_embarcacao = st.sidebar.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
 
-# Dicionário de Limites Operacionais por Tipo de Sensor (Vento em nós, Onda em metros)
-limites_sensores = {
-    "Ecobatímetro Monofeixe": {"vento": 20.0, "onda": 2.0},
-    "Ecobatímetro Multifeixe (Multibeam)": {"vento": 18.0, "onda": 1.5},
-    "Magnetômetro (Rebocado)": {"vento": 18.0, "onda": 1.5},
-    "Sidescan + SBP (Integrado Rebocado)": {"vento": 18.0, "onda": 1.5},
-    "Sistema Sísmico Monocanal (Rebocado)": {"vento": 15.0, "onda": 1.2},
-    "Sistema Sísmico Multicanal (Rebocado)": {"vento": 12.0, "onda": 1.0}
+# Dicionário atualizado de Limites Operacionais fornecidos pela equipe técnica
+limites_equipamentos = {
+    "Monofeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
+    "Multifeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
+    "SSS": {"onda": 2.5, "vento": 25.0, "corrente": 3.0},
+    "Mag": {"onda": 2.0, "vento": 25.0, "corrente": 3.0},
+    "SBP": {"onda": 2.0, "vento": 18.0, "corrente": 3.0},
+    "Sísmica Monocanal": {"onda": 1.5, "vento": 18.0, "corrente": 2.0},
+    "Sísmica Multicanal": {"onda": 2.0, "vento": 18.0, "corrente": 2.0},
+    "Vibrocore": {"onda": 1.0, "vento": 15.0, "corrente": 1.5},
+    "Jet Probe": {"onda": 1.5, "vento": 15.0, "corrente": 1.5},
+    "Amostragem Superficial": {"onda": 1.5, "vento": 18.0, "corrente": 2.0}
 }
 
-if sensores_selecionados:
-    limite_vento_ativo = min([limites_sensores[s]["vento"] for s in sensores_selecionados])
-    limite_onda_ativo = min([limites_sensores[s]["onda"] for s in sensores_selecionados])
+if equipamentos_selecionados:
+    limite_onda_ativo = min([limites_equipamentos[e]["onda"] for e in equipamentos_selecionados])
+    limite_vento_ativo = min([limites_equipamentos[e]["vento"] for e in equipamentos_selecionados])
+    limite_corrente_ativo = min([limites_equipamentos[e]["corrente"] for e in equipamentos_selecionados])
 else:
-    limite_vento_ativo = 20.0
-    limite_onda_ativo = 2.0
+    limite_onda_ativo = 2.5
+    limite_vento_ativo = 25.0
+    limite_corrente_ativo = 99.0
 
 def graus_para_direcao(deg):
     if pd.isna(deg):
@@ -229,6 +238,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     def regras_e_incidencia(row):
         onda = row['Onda_Altura(m)']
         vento = row['Vento_Nos']
+        corrente = row['Corrente_Vel_Nos']
         onda_dir = row['Onda_Dir_Num']
         
         aviso_direcao = ""
@@ -239,9 +249,21 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             if 60 <= diff_ang <= 120:
                 aviso_direcao = " [Atencao: Mar de Traves]"
 
-        if onda > limite_onda_ativo or vento > limite_vento_ativo:
+        # Condição Crítica (No-Go): Se qualquer limiar for ultrapassado
+        ultrapassou_onda = onda > limite_onda_ativo
+        ultrapassou_vento = vento > limite_vento_ativo
+        ultrapassou_corrente = (limite_corrente_ativo < 10.0) and (corrente > limite_corrente_ativo)
+
+        if ultrapassou_onda or ultrapassou_vento or ultrapassou_corrente:
             return "SEM OPERACAO (NO-GO)", f"Limite critico excedido{aviso_direcao}"
-        elif (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo) | (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo):
+        
+        # Condição Limítrofe (Avaliação Técnica): Entre 75% e 100% do limite
+        limite_corrente_check = limite_corrente_ativo if limite_corrente_ativo < 10.0 else 99.0
+        limitrofe_onda = (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo)
+        limitrofe_vento = (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo)
+        limitrofe_corrente = (limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)
+
+        if limitrofe_onda or limitrofe_vento or limitrofe_corrente:
             return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
         else:
             status_base = "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA"
@@ -268,7 +290,8 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     sub_str = f" ({sub_txt})" if sub_txt else ""
     
     st.subheader(f"Previsão Tática para: {nome_local_exibicao} ({dias_janela} dias){sub_str}")
-    st.markdown(f"**Sensores Ativos na Campanha:** {', '.join(sensores_selecionados) if sensores_selecionados else 'Nenhum'} | **Limiar Aplicado:** Vento <= {limite_vento_ativo} kn | Onda <= {limite_onda_ativo} m")
+    corrente_txt_limite = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
+    st.markdown(f"**Equipamentos Ativos:** {', '.join(equipamentos_selecionados) if equipamentos_selecionados else 'Nenhum'} | **Limiar Aplicado:** Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_txt_limite}")
     
     total_horas = len(df)
     favoraveis = len(df[df['Status'] == "FAVORAVEL"])
@@ -286,19 +309,29 @@ if st.sidebar.button("Gerar Boletim Operacional"):
     kpi3.metric("Sem Operacao (No-Go)", f"{nogo}h ({p_nogo:.1f}%)")
     st.markdown("---")
 
-    with st.expander("Informacoes Tecnicas, Fontes de Dados e Diretrizes de Sensores"):
+    # --- SEPARADOR 1: DIRETRIZES E LIMITES DOS EQUIPAMENTOS ---
+    with st.expander("Diretrizes Operacionais e Limites de Equipamentos"):
         st.markdown("""
-        **1. Hierarquia de Limites por Sensor:**
-        O limite operacional da embarcação é ditado pelo sensor mais sensível em operação na campanha. O sistema avalia automaticamente o conjunto de sensores selecionados e aplica o limiar mais restritivo.
+        **1. Hierarquia e Regra de Ouro dos Equipamentos:**
+        O limite operacional da embarcação é ditado pelo equipamento mais restritivo em operação na campanha. O sistema avalia simultaneamente o conjunto de equipamentos selecionados e aplica o limiar mais rigoroso para Onda, Vento e Corrente.
         
         **2. Diretrizes de Operação (Padrões IHO / IMCA):**
-        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll que degradam a acurácia batimétrica.
-        * **Sistemas Rebocados (Magnetômetro / Sidescan+SBP / Sísmicas):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion).
+        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas sob o casco e movimentos de pitch/roll que degradam a acurácia batimétrica.
+        * **Sistemas Rebocados e Geofísicos (SSS / Mag / SBP / Sísmicas):** Exigem navegação ao longo da direção dominante do swell para evitar mar de través (beam sea), que causa ruído de movimento no cabo (noise motion).
+        * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Altamente sensíveis a correntes de fundo e agitação superficial devido ao posicionamento estático ou semi-estático do guincho.
+        """)
+
+    # --- SEPARADOR 2: FONTES DE DADOS E MOTORES HIDRODINÂMICOS ---
+    with st.expander("Fontes de Dados e Motores Hidrodinâmicos"):
+        st.markdown("""
+        **1. Maré e Nível do Mar:**
+        Obtido via modelo harmônico costeiro de alta precisão calibrado para o litoral brasileiro, sincronizado com o fuso horário local.
         
-        **3. Fontes e Motores Hidrodinâmicos:**
-        * **Mare e Nível do Mar:** Obtido via modelo harmônico e compensação costeira.
-        * **Correntes Estuarinas:** Calculadas dinamicamente via gradiente temporal da maré (dh/dt), simulando o escoamento em canais e barras (Enchente e Vazante) em nós (kn).
-        * **Ondas e Ventos:** Modelos em tempo real Open-Marine e Forecast (Open-Meteo) com fallback físico integrado.
+        **2. Correntes Estuarinas e de Canais (Física Hidrodinâmica):**
+        Calculadas dinamicamente através do gradiente temporal do nível da maré ($dh/dt$), capturando o escoamento real durante as fases de Enchente e Vazante em canais, estuários e barras, apresentadas em nós (kn).
+        
+        **3. Condições de Onda e Vento:**
+        Dados meteorológicos e oceanográficos em tempo real fornecidos pelas APIs globais oficiais **Open-Marine** e **Forecast (Open-Meteo)**, guarnecidos com motor de fallback físico adaptativo.
         """)
     
     def gerar_pdf(dataframe, local_nome, dias):
@@ -308,8 +341,9 @@ if st.sidebar.button("Gerar Boletim Operacional"):
         
         pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO OPERACIONAL", ln=True, align="C")
         pdf.set_font("helvetica", "", 10)
-        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Sensores: {', '.join(sensores_selecionados)}", ln=True, align="C")
-        pdf.cell(0, 6, f"Limiar Aplicado: Vento <= {limite_vento_ativo} kn | Onda <= {limite_onda_ativo} m", ln=True, align="C")
+        pdf.cell(0, 6, f"Local: {local_nome} | Janela: {dias} dias | Equipamentos: {', '.join(equipamentos_selecionados)}", ln=True, align="C")
+        corrente_pdf_txt = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
+        pdf.cell(0, 6, f"Limiar Aplicado: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         pdf.ln(4)
         
         pdf.set_font("helvetica", "B", 8)
