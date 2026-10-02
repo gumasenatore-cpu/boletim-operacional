@@ -5,3 +5,4 @@ requests
 plotly
 fpdf2
 streamlit-folium
+kaleido
