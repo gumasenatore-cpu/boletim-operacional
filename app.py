@@ -319,7 +319,7 @@ if st.sidebar.button("Gerar Boletim Operacional"):
             fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
             fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
             fig_donut.update_layout(margin=dict(t=10, b=10, l=10, r=10), showlegend=True, height=220, legend=dict(yanchor="top", y=0.99, xanchor="left", x=1.05))
-            st.plotly_chart(fig_donut, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig_donut, use_container_width=True)
         else:
             st.write("Sem dados para o período.")
 
