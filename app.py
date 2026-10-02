@@ -254,7 +254,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         
         # 1. Gráfico de Rosca (Donut) COM LEGENDA LATERAL
         if (fav + tec + nogo) > 0:
-            fig, ax = plt.subplots(figsize=(7, 4))  # Área mais larga para acomodar a legenda
+            fig, ax = plt.subplots(figsize=(7, 4))
             labels = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             sizes = [fav, tec, nogo]
             colors = ['#2E7D32', '#E5E1E6', '#F32735']
@@ -265,7 +265,6 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             wedges, texts, autotexts = ax.pie(plot_sizes, colors=plot_colors, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4, edgecolor='w'))
             ax.axis('equal')
             
-            # Adiciona a legenda lateral
             ax.legend(wedges, plot_labels,
                       title="Status Operacional",
                       loc="center left",
@@ -357,7 +356,6 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         pdf.cell(0, 6, f"Limiar Consenso: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         
         if 'donut' in img_paths:
-            # Imagem reposicionada e dimensionada para acomodar a legenda sem desalinhar
             pdf.image(img_paths['donut'], x=70, y=50, w=140)
             
         # PÁGINA 2: Gráficos de Linha (Modelos)
@@ -442,10 +440,38 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
     st.markdown("---")
     
     with st.expander("Diretrizes Operacionais e Limites de Equipamentos"):
-        st.markdown("**1. Hierarquia e Regra de Ouro:** O limite operacional é ditado pelo equipamento mais restritivo.\n\n**2. Diretrizes (Padrões IHO / IMCA):**\n* **Sistemas Acústicos:** Sensíveis a aeração de bolhas e pitch/roll.\n* **Sistemas Rebocados:** Exigem navegação ao longo do swell para evitar mar de través.\n* **Operações Geotécnicas:** Sensíveis a correntes de fundo e agitação superficial.")
+        st.markdown("""
+        **1. Hierarquia e Regra de Ouro dos Equipamentos:**
+        O limite operacional da embarcação é ditado pelo equipamento mais restritivo em operação na campanha. O sistema avalia simultaneamente o conjunto de equipamentos selecionados e aplica o limiar mais rigoroso.
+        
+        **2. Diretrizes de Operação (Padrões IHO / IMCA):**
+        * **Sistemas Acústicos (Monofeixe / Multifeixe):** Sensíveis a aeração de bolhas e movimentos de pitch/roll.
+        * **Sistemas Rebocados (SSS / Mag / SBP / Sísmicas):** Exigem navegação ao longo do swell para evitar mar de través.
+        * **Operações Geotécnicas (Vibrocore / Jet Probe / Amostragem):** Sensíveis a correntes de fundo e agitação superficial.
+        """)
 
     with st.expander("Fontes de Dados, Modelos Numéricos Globais e Credibilidade Técnica"):
-        st.markdown("### Transparência e Rigor Metodológico\nPara assegurar total confiabilidade, este boletim emprega **Múltiplas Fontes Redundantes**:\n**1. Ventos (Ensemble):** ECMWF IFS (Europa), GFS (EUA) e ICON (Alemanha).\n**2. Ondas (Ensemble):** ECMWF Waves, WaveWatch III (WW3 - NOAA) e Modelo Costeiro (Open-Meteo Marine).\n**3. Correntes Estuarinas e Maré:** Modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.")
+        st.markdown("""
+        ### Transparência e Rigor Metodológico
+        Para assegurar total confiabilidade nas operações de campo, o presente boletim operacional emprega uma arquitetura de **Múltiplas Fontes Redundantes**, cruzando dados de centros meteorológicos e oceanográficos de referência global. A leitura dos parâmetros é estruturada da seguinte forma:
+        
+        **1. Previsão de Ventos em Nós (Comitê Multi-Modelo / Ensemble):**
+        O vento é o principal motor gerador de agitação marítima e de esforço sobre as embarcações. Para mitigar incertezas individuais de previsão, o aplicativo coleta, processa e calcula uma curva de consenso (média ponderada) em **nós (kn)** entre três modelos atmosféricos globais:
+        * **ECMWF IFS (Centro Europeu - Europa):** Padrão ouro mundial em previsão numérica de atmosfera e campos de vento.
+        * **GFS (Global Forecast System - NOAA, Estados Unidos):** Modelo oficial americano de referência sinótica global.
+        * **ICON (DWD, Alemanha):** Modelo de altíssima resolução espacial para validação cruzada.
+        
+        **2. Agitação Marítima e Altura de Ondas (Comitê Multi-Modelo de Ondas):**
+        A agitação de vagas e swell é obtida através de um comitê oceanográfico que consolida estatisticamente a média de três vertentes de alta precisão internacional:
+        * **ECMWF Waves (Centro Europeu):** Modelo acoplado de referência global em energia de superfície e propagação de ondas.
+        * **WaveWatch III (WW3 - NOAA / EUA):** O modelo numérico de terceira geração referência absoluta mundial em propagação de swell em águas profundas e costeiras.
+        * **Modelo Costeiro de Alta Resolução (Open-Meteo Marine):** Simulação hidrodinâmica local calibrada para águas rasas e zona costeira.
+        * *Fundamentação:* O cruzamento em comitê (ensemble) entre ECMWF Waves, WaveWatch III e o modelo costeiro elimina distorções pontuais, garantindo uma curva de consenso robusta para a matriz de Go/No-Go dos sensores.
+        
+        **3. Correntes Estuarinas e Maré:**
+        * **Nível do Mar:** Calculado através de modelos harmônicos de maré de alta precisão calibrados para a costa brasileira.
+        * **Correntes em Canais e Barras:** Derivadas dinamicamente via taxa de variação temporal do nível da maré ($\Delta h / \Delta t$) em nós (kn).
+        """)
 
     # --- BOTÃO DE DOWNLOAD DO PDF MATPLOTLIB ---
     if st.button("Gerar Relatório Executivo (PDF com Gráficos)"):
