@@ -252,9 +252,9 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
     def gerar_pdf_com_graficos_matplotlib(dataframe, local_nome, dias, fav, tec, nogo):
         img_paths = {}
         
-        # 1. Gráfico de Rosca (Donut)
+        # 1. Gráfico de Rosca (Donut) COM LEGENDA LATERAL
         if (fav + tec + nogo) > 0:
-            fig, ax = plt.subplots(figsize=(5, 5))
+            fig, ax = plt.subplots(figsize=(7, 4))  # Área mais larga para acomodar a legenda
             labels = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             sizes = [fav, tec, nogo]
             colors = ['#2E7D32', '#E5E1E6', '#F32735']
@@ -262,8 +262,16 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             plot_sizes = [s for s in sizes if s > 0]
             plot_colors = [c for s, c in zip(sizes, colors) if s > 0]
             
-            ax.pie(plot_sizes, labels=plot_labels, colors=plot_colors, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4))
+            wedges, texts, autotexts = ax.pie(plot_sizes, colors=plot_colors, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4, edgecolor='w'))
             ax.axis('equal')
+            
+            # Adiciona a legenda lateral
+            ax.legend(wedges, plot_labels,
+                      title="Status Operacional",
+                      loc="center left",
+                      bbox_to_anchor=(1, 0.5, 0.5, 1),
+                      frameon=False)
+            
             f_donut = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
             plt.savefig(f_donut, bbox_inches='tight', dpi=150)
             plt.close(fig)
@@ -349,7 +357,8 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         pdf.cell(0, 6, f"Limiar Consenso: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         
         if 'donut' in img_paths:
-            pdf.image(img_paths['donut'], x=85, y=50, w=120)
+            # Imagem reposicionada e dimensionada para acomodar a legenda sem desalinhar
+            pdf.image(img_paths['donut'], x=70, y=50, w=140)
             
         # PÁGINA 2: Gráficos de Linha (Modelos)
         if 'onda' in img_paths or 'vento' in img_paths:
@@ -417,7 +426,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             fig_donut = px.pie(names=labels_status, values=values_status, hole=0.65, color=labels_status, color_discrete_map=color_map)
             fig_donut.update_traces(textposition='inside', textinfo='percent', hoverinfo='label+value')
             fig_donut.update_layout(margin=dict(t=10, b=10, l=10, r=10), showlegend=True, height=220, legend=dict(yanchor="top", y=0.99, xanchor="left", x=1.05))
-            st.plotly_chart(fig_donut, use_container_width=True) # Ícone de baixar imagem liberado aqui!
+            st.plotly_chart(fig_donut, use_container_width=True)
         else:
             st.write("Sem dados para o período.")
 
