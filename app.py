@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.express as px
+import plotly.graph_objects as go
 from PIL import Image
 from fpdf import FPDF
 import tempfile
@@ -15,6 +16,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.colors as mcolors
 
 st.set_page_config(page_title="Boletim Operacional 4SAS", layout="wide")
 
@@ -248,13 +250,26 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
     tecnicas = len(df[df['Status'] == "AVALIACAO TECNICA"])
     nogo = len(df[df['Status'] == "SEM OPERACAO"])
 
+    # --- PREPARAÇÃO DOS DADOS DA LINHA DO TEMPO (MATRIZ) ---
+    df_tl = df.copy()
+    df_tl['Dia'] = df_tl['Data_Hora'].dt.strftime('%d/%m')
+    df_tl['Hora'] = df_tl['Data_Hora'].dt.hour
+    status_map = {"FAVORAVEL": 0, "AVALIACAO TECNICA": 1, "SEM OPERACAO": 2}
+    df_tl['Status_Num'] = df_tl['Status'].map(status_map)
+    heatmap_data = df_tl.pivot(index='Dia', columns='Hora', values='Status_Num')
+    
+    for h in range(24):
+        if h not in heatmap_data.columns:
+            heatmap_data[h] = np.nan
+    heatmap_data = heatmap_data[sorted(heatmap_data.columns)]
+
     # --- FUNÇÃO GERADORA DO PDF EXECUTIVO (COM MATPLOTLIB) ---
-    def gerar_pdf_com_graficos_matplotlib(dataframe, local_nome, dias, fav, tec, nogo):
+    def gerar_pdf_com_graficos_matplotlib(dataframe, local_nome, dias, fav, tec, nogo, df_heatmap):
         img_paths = {}
         
         # 1. Gráfico de Rosca (Donut) COM LEGENDA LATERAL
         if (fav + tec + nogo) > 0:
-            fig, ax = plt.subplots(figsize=(7, 4))
+            fig, ax = plt.subplots(figsize=(6, 4))
             labels = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             sizes = [fav, tec, nogo]
             colors = ['#2E7D32', '#E5E1E6', '#F32735']
@@ -266,15 +281,40 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             ax.axis('equal')
             
             ax.legend(wedges, plot_labels,
-                      title="Status Operacional",
+                      title="Status",
                       loc="center left",
-                      bbox_to_anchor=(1, 0.5, 0.5, 1),
-                      frameon=False)
+                      bbox_to_anchor=(0.9, 0.5, 0.5, 1),
+                      frameon=False, fontsize=8)
             
             f_donut = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
             plt.savefig(f_donut, bbox_inches='tight', dpi=150)
             plt.close(fig)
             img_paths['donut'] = f_donut
+
+        # 1.5 Gráfico Kanban / Linha do Tempo
+        fig_tl, ax_tl = plt.subplots(figsize=(10, 3.5))
+        cmap = mcolors.ListedColormap(['#2E7D32', '#E5E1E6', '#F32735'])
+        bounds = [-0.5, 0.5, 1.5, 2.5]
+        norm = mcolors.BoundaryNorm(bounds, cmap.N)
+        
+        ax_tl.imshow(df_heatmap.values, cmap=cmap, norm=norm, aspect='auto')
+        ax_tl.set_xticks(np.arange(len(df_heatmap.columns)))
+        ax_tl.set_xticklabels([f"{h:02d}h" for h in df_heatmap.columns], fontsize=8, rotation=45)
+        ax_tl.set_yticks(np.arange(len(df_heatmap.index)))
+        ax_tl.set_yticklabels(df_heatmap.index, fontsize=9)
+        
+        ax_tl.set_xticks(np.arange(-.5, len(df_heatmap.columns), 1), minor=True)
+        ax_tl.set_yticks(np.arange(-.5, len(df_heatmap.index), 1), minor=True)
+        ax_tl.grid(which="minor", color="w", linestyle='-', linewidth=1.5)
+        ax_tl.tick_params(which="minor", bottom=False, left=False)
+        ax_tl.set_title("Matriz de Operacao", fontsize=10)
+        
+        for spine in ax_tl.spines.values(): spine.set_visible(False)
+            
+        f_timeline = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+        plt.savefig(f_timeline, bbox_inches='tight', dpi=150)
+        plt.close(fig_tl)
+        img_paths['timeline'] = f_timeline
 
         # 2. Gráfico de Ondas
         fig, ax = plt.subplots(figsize=(8, 3.5))
@@ -346,7 +386,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         # --- MONTAGEM DO PDF ---
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         
-        # PÁGINA 1: Cabeçalho e Gráfico Donut
+        # PÁGINA 1: Cabeçalho, Gráfico Donut e Kanban (Lado a Lado)
         pdf.add_page()
         pdf.set_font("helvetica", "B", 16)
         pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO (EXECUTIVO)", ln=True, align="C")
@@ -356,7 +396,9 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         pdf.cell(0, 6, f"Limiar Consenso: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         
         if 'donut' in img_paths:
-            pdf.image(img_paths['donut'], x=70, y=50, w=140)
+            pdf.image(img_paths['donut'], x=10, y=55, w=105)
+        if 'timeline' in img_paths:
+            pdf.image(img_paths['timeline'], x=115, y=55, w=170)
             
         # PÁGINA 2: Gráficos de Linha (Modelos)
         if 'onda' in img_paths or 'vento' in img_paths:
@@ -414,9 +456,10 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
     st.markdown("---")
     st.markdown("### Sumário Executivo da Janela")
     
-    col_chart, col_alerts = st.columns([1, 2])
+    # DIVISÃO DA TELA: Donut à esquerda, Matriz Kanban à direita
+    col_donut, col_timeline = st.columns([1, 1.8])
     
-    with col_chart:
+    with col_donut:
         if total_horas > 0:
             labels_status = ['FAVORAVEL', 'AVALIACAO TECNICA', 'SEM OPERACAO']
             values_status = [favoraveis, tecnicas, nogo]
@@ -427,15 +470,55 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             st.plotly_chart(fig_donut, use_container_width=True)
         else:
             st.write("Sem dados para o período.")
+            
+    with col_timeline:
+        if total_horas > 0:
+            text_data = []
+            for row in heatmap_data.values:
+                text_row = []
+                for val in row:
+                    if val == 0: text_row.append("FAVORAVEL")
+                    elif val == 1: text_row.append("AVALIACAO TECNICA")
+                    elif val == 2: text_row.append("SEM OPERACAO")
+                    else: text_row.append("Sem Dado")
+                text_data.append(text_row)
+                
+            colorscale = [
+                [0.0, '#2E7D32'], [0.333, '#2E7D32'],
+                [0.333, '#E5E1E6'], [0.666, '#E5E1E6'],
+                [0.666, '#F32735'], [1.0, '#F32735']
+            ]
+            
+            fig_timeline = go.Figure(data=go.Heatmap(
+                z=heatmap_data.values,
+                x=[f"{h:02d}h" for h in heatmap_data.columns],
+                y=heatmap_data.index,
+                colorscale=colorscale,
+                zmin=0, zmax=2,
+                showscale=False,
+                xgap=2, ygap=2,
+                text=text_data,
+                hovertemplate='Dia: %{y}<br>Hora: %{x}<br>Status: %{text}<extra></extra>'
+            ))
+            
+            fig_timeline.update_layout(
+                title=dict(text="Matriz de Operação", font=dict(size=14)),
+                xaxis=dict(tickangle=-45),
+                yaxis=dict(autorange='reversed'),
+                height=220,
+                margin=dict(t=40, b=10, l=10, r=10)
+            )
+            st.plotly_chart(fig_timeline, use_container_width=True)
 
-    with col_alerts:
-        horas_nogo = df[df['Status'] == "SEM OPERACAO"]
-        horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
-        
-        if not horas_nogo.empty: st.error(f"**RESTRIÇÃO CRÍTICA**\n\nIdentificados {len(horas_nogo)} períodos de bloqueio. Início previsto: {horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')}.")
-        elif not horas_atencao.empty: st.warning(f"**CONDIÇÃO LIMÍTROFE**\n\nIdentificadas {len(horas_atencao)} horas em patamar de atenção ou incidência de mar de través.")
-        else: st.success("**CONDIÇÃO FAVORÁVEL**\n\nJanela inteiramente operável dentro dos limiares estabelecidos.")
-        st.info("**AVISOS AOS NAVEGANTES (AVGN) - DHN**\n\nConsulta obrigatória antes de zarpar: [Portal Oficial DHN](https://www.marinha.mil.br/chm/dados-do-segnav-aviso-aos-navegantes-tela).")
+    # ALERTA DE STATUS GERAL
+    horas_nogo = df[df['Status'] == "SEM OPERACAO"]
+    horas_atencao = df[df['Status'] == "AVALIACAO TECNICA"]
+    
+    if not horas_nogo.empty: st.error(f"**RESTRIÇÃO CRÍTICA** - Identificados {len(horas_nogo)} períodos de bloqueio. Início previsto: {horas_nogo.iloc[0]['Data_Hora'].strftime('%d/%m/%Y às %H:%M')}.")
+    elif not horas_atencao.empty: st.warning(f"**CONDIÇÃO LIMÍTROFE** - Identificadas {len(horas_atencao)} horas em patamar de atenção ou incidência de mar de través.")
+    else: st.success("**CONDIÇÃO FAVORÁVEL** - Janela inteiramente operável dentro dos limiares estabelecidos.")
+    
+    st.info("**AVISOS AOS NAVEGANTES (AVGN) - DHN** - Consulta obrigatória antes de zarpar: [Portal Oficial DHN](https://www.marinha.mil.br/chm/dados-do-segnav-aviso-aos-navegantes-tela).")
 
     st.markdown("---")
     
@@ -476,7 +559,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
     # --- BOTÃO DE DOWNLOAD DO PDF MATPLOTLIB ---
     if st.button("Gerar Relatório Executivo (PDF com Gráficos)"):
         with st.spinner("Compilando dados e gerando gráficos para o relatório..."):
-            st.session_state['pdf_path'] = gerar_pdf_com_graficos_matplotlib(df, nome_local_exibicao, dias_janela, favoraveis, tecnicas, nogo)
+            st.session_state['pdf_path'] = gerar_pdf_com_graficos_matplotlib(df, nome_local_exibicao, dias_janela, favoraveis, tecnicas, nogo, heatmap_data)
 
     if 'pdf_path' in st.session_state:
         with open(st.session_state['pdf_path'], "rb") as pdf_file:
