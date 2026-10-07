@@ -224,11 +224,9 @@ def gerar_mapa_estatico(lat_val, lon_val, zoom=10):
 
     xtile, ytile = deg2num(lat_val, lon_val, zoom)
     
-    # Cria fundo cinza caso o servidor OSM demore ou falhe
     map_img = Image.new('RGB', (768, 768), color='#e5e1e6')
     headers = {'User-Agent': 'BoletimOperacional4SAS/1.0'}
     
-    # Baixa e costura 9 blocos (tiles) para montar o mapa
     for i in range(-1, 2):
         for j in range(-1, 2):
             x = xtile + i
@@ -242,7 +240,6 @@ def gerar_mapa_estatico(lat_val, lon_val, zoom=10):
             except:
                 pass
                 
-    # Calcula e desenha o ponto exato da coordenada em vermelho
     n = 2.0 ** zoom
     x_exact = (lon_val + 180.0) / 360.0 * n
     y_exact = (1.0 - math.asinh(math.tan(math.radians(lat_val))) / math.pi) / 2.0 * n
@@ -253,11 +250,9 @@ def gerar_mapa_estatico(lat_val, lon_val, zoom=10):
     draw = ImageDraw.Draw(map_img)
     r_dot = 10
     
-    # Ajuste de sintaxe blindado para evitar erros de leitura na nuvem
     box_ponto = [px - r_dot, py - r_dot, px + r_dot, py + r_dot]
     draw.ellipse(box_ponto, fill='#F32735', outline='black', width=2)
     
-    # Corta o mapa num formato panorâmico 3:1 (600x200 pixels) focado no ponto
     crop_box = (px - 300, py - 100, px + 300, py + 100)
     final_img = map_img.crop(crop_box)
     
@@ -442,25 +437,25 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         # --- MONTAGEM DO PDF (COM RODAPÉ PERSONALIZADO E DISCRETO) ---
         class Relatorio4SAS(FPDF):
             def footer(self):
-                # Posiciona o rodapé a 15 mm do fundo
+                # Posiciona o cursor de escrita do texto a 15 mm do fundo
                 self.set_y(-15)
-                # Configura fonte discreta: Itálico, tamanho 8, cor cinza suave
+                # Configura fonte discreta
                 self.set_font("helvetica", "I", 8)
                 self.set_text_color(128, 128, 128)
                 
                 # Canto Esquerdo: Site
                 self.cell(0, 10, "www.4sas.com.br", align="L")
                 
-                # Centro: Número da Página (reinicia a posição Y para a mesma linha)
+                # Centro: Número da Página
                 self.set_y(-15)
                 self.cell(0, 10, f"Página {self.page_no()}", align="C")
                 
-                # Canto Direito: Logo 2 discreta
+                # Canto Direito: Logo 2 discreta alinhada com o texto (y ajustado para 196)
                 try:
                     if os.path.exists("logo2.png"):
-                        self.image("logo2.png", x=265, y=192, w=18)
+                        self.image("logo2.png", x=265, y=196, w=18)
                     elif os.path.exists("logo.png"):
-                        self.image("logo.png", x=265, y=192, w=18)
+                        self.image("logo.png", x=265, y=196, w=18)
                 except:
                     pass
 
