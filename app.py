@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import math
 import plotly.express as px
 import plotly.graph_objects as go
-from PIL import Image
+from PIL import Image, ImageDraw
 from fpdf import FPDF
 import tempfile
 import os
@@ -212,6 +213,55 @@ def carregar_dados_multimodelo(lat_val, lon_val):
     df['Fase_Estuario'], df['Corrente_Dir'] = fases, direcoes_corrente
     return df
 
+# --- FUNÇÃO PARA GERAR MAPA ESTÁTICO DO OPENSTREETMAP ---
+def gerar_mapa_estatico(lat_val, lon_val, zoom=10):
+    def deg2num(lat_deg, lon_deg, z):
+        lat_rad = math.radians(lat_deg)
+        n = 2.0 ** z
+        xtile = int((lon_deg + 180.0) / 360.0 * n)
+        ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+        return (xtile, ytile)
+
+    xtile, ytile = deg2num(lat_val, lon_val, zoom)
+    
+    # Cria fundo cinza caso o servidor OSM demore ou falhe
+    map_img = Image.new('RGB', (768, 768), color='#e5e1e6')
+    headers = {'User-Agent': 'BoletimOperacional4SAS/1.0'}
+    
+    # Baixa e costura 9 blocos (tiles) para montar o mapa
+    for i in range(-1, 2):
+        for j in range(-1, 2):
+            x = xtile + i
+            y = ytile + j
+            url = f"https://tile.openstreetmap.org/{zoom}/{x}/{y}.png"
+            try:
+                r = requests.get(url, headers=headers, stream=True, timeout=3)
+                if r.status_code == 200:
+                    tile = Image.open(r.raw).convert("RGB")
+                    map_img.paste(tile, ((i+1)*256, (j+1)*256))
+            except:
+                pass
+                
+    # Calcula e desenha o ponto exato da coordenada em vermelho
+    n = 2.0 ** zoom
+    x_exact = (lon_val + 180.0) / 360.0 * n
+    y_exact = (1.0 - math.asinh(math.tan(math.radians(lat_val))) / math.pi) / 2.0 * n
+    
+    px = int(256 + (x_exact - xtile) * 256)
+    py = int(256 + (y_exact - ytile) * 256)
+    
+    draw = ImageDraw.Draw(map_img)
+    r_dot = 10
+    draw.ellipse((px-r_dot, py-r_dot, px+r_dot, py+r_dot), fill='#F32735', outline='black', width=2)
+    
+    # Corta o mapa num formato panorâmico 3:1 (600x200 pixels) focado no ponto
+    crop_box = (px - 300, py - 100, px + 300, py + 100)
+    final_img = map_img.crop(crop_box)
+    
+    f_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+    final_img.save(f_path)
+    return f_path
+
 # --- GERAÇÃO DO BOLETIM INTERATIVO ---
 if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_state:
     if "Gerar Boletim Operacional" in st.session_state or 'df_atual' not in st.session_state:
@@ -263,10 +313,13 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             heatmap_data[h] = np.nan
     heatmap_data = heatmap_data[sorted(heatmap_data.columns)]
 
-    # --- FUNÇÃO GERADORA DO PDF EXECUTIVO (COM MATPLOTLIB) ---
+    # --- FUNÇÃO GERADORA DO PDF EXECUTIVO (COM MATPLOTLIB E MAPA OSM) ---
     def gerar_pdf_com_graficos_matplotlib(dataframe, local_nome, dias, fav, tec, nogo, df_heatmap):
         img_paths = {}
         
+        # 0. Gerar Mapa Estático
+        img_paths['map'] = gerar_mapa_estatico(lat, lon, zoom=10)
+
         # 1. Gráfico de Rosca (Donut) COM LEGENDA LATERAL
         if (fav + tec + nogo) > 0:
             fig, ax = plt.subplots(figsize=(6, 4))
@@ -386,7 +439,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         # --- MONTAGEM DO PDF ---
         pdf = FPDF(orientation='L', unit='mm', format='A4')
         
-        # PÁGINA 1: Cabeçalho, Gráfico Donut e Kanban (Lado a Lado)
+        # PÁGINA 1: Cabeçalho, Mapa Panorâmico, Gráfico Donut e Kanban
         pdf.add_page()
         pdf.set_font("helvetica", "B", 16)
         pdf.cell(0, 10, "4SAS - BOLETIM METEOCEANOGRAFICO (EXECUTIVO)", ln=True, align="C")
@@ -395,10 +448,15 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
         corrente_pdf_txt = f" | Corrente <= {limite_corrente_ativo} kn" if limite_corrente_ativo < 10.0 else ""
         pdf.cell(0, 6, f"Limiar Consenso: Onda <= {limite_onda_ativo} m | Vento <= {limite_vento_ativo} kn{corrente_pdf_txt}", ln=True, align="C")
         
+        if 'map' in img_paths:
+            # Mapa estático centrado (Largura folha 297mm. w=180 -> Centro: x=58.5)
+            pdf.image(img_paths['map'], x=58.5, y=42, w=180, h=60)
+            
         if 'donut' in img_paths:
-            pdf.image(img_paths['donut'], x=10, y=55, w=105)
+            pdf.image(img_paths['donut'], x=10, y=105, w=105)
+            
         if 'timeline' in img_paths:
-            pdf.image(img_paths['timeline'], x=115, y=55, w=170)
+            pdf.image(img_paths['timeline'], x=115, y=105, w=170)
             
         # PÁGINA 2: Gráficos de Linha (Modelos)
         if 'onda' in img_paths or 'vento' in img_paths:
@@ -413,7 +471,7 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             if 'rosa_v' in img_paths: pdf.image(img_paths['rosa_v'], x=35, y=40, w=100)
             if 'rosa_o' in img_paths: pdf.image(img_paths['rosa_o'], x=165, y=40, w=100)
                 
-        # PÁGINA 4 (FINAL): Tabela de Dados
+        # PÁGINA 4+ (FINAL): Tabela de Dados (Em página separada, após os gráficos)
         pdf.add_page()
         pdf.set_font("helvetica", "B", 12)
         pdf.cell(0, 10, "Tabela de Dados Operacionais", ln=True, align="C")
