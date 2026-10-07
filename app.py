@@ -436,8 +436,25 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
             plt.close(fig)
             img_paths['rosa_o'] = f_ro
 
-        # --- MONTAGEM DO PDF ---
-        pdf = FPDF(orientation='L', unit='mm', format='A4')
+        # --- MONTAGEM DO PDF (COM RODAPÉ PERSONALIZADO) ---
+        class Relatorio4SAS(FPDF):
+            def footer(self):
+                # Posiciona o rodapé a 15 mm do fundo
+                self.set_y(-15)
+                # Fonte do número da página
+                self.set_font("helvetica", "I", 8)
+                # Número da página no centro
+                self.cell(0, 10, f"Página {self.page_no()}", align="C")
+                # Insere a logo da 4SAS no canto inferior direito
+                try:
+                    if os.path.exists("logo.png"):
+                        self.image("logo.png", x=265, y=192, w=22)
+                    elif os.path.exists("logo2.png"):
+                        self.image("logo2.png", x=265, y=192, w=22)
+                except:
+                    pass
+
+        pdf = Relatorio4SAS(orientation='L', unit='mm', format='A4')
         
         # PÁGINA 1: Cabeçalho, Mapa Panorâmico, Gráfico Donut e Kanban
         pdf.add_page()
