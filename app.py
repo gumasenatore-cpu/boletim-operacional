@@ -125,7 +125,7 @@ limites_equipamentos = {
     "Sísmica Monocanal": {"onda": 1.5, "vento": 18.0, "corrente": 2.0},
     "Sísmica Multicanal": {"onda": 2.0, "vento": 18.0, "corrente": 2.0},
     "Vibrocore": {"onda": 1.0, "vento": 15.0, "corrente": 1.5},
-    "Jet Probe": {"onda": 1.5, "vento": 15.0, "corrente": 1.5},
+    "Jet Probe": {"onda": 1.2, "vento": 16.0, "corrente": 0.6},
     "Amostragem Superficial": {"onda": 1.5, "vento": 18.0, "corrente": 2.0}
 }
 
