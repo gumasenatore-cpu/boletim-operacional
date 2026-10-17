@@ -118,7 +118,7 @@ with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
 
 limites_equipamentos = {
     "Monofeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
-    "Multifeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
+    "Multifeixe": {"onda": 1.5, "vento": 15.0, "corrente": 99.0},
     "SSS": {"onda": 2.5, "vento": 25.0, "corrente": 3.0},
     "Mag": {"onda": 2.0, "vento": 25.0, "corrente": 3.0},
     "SBP": {"onda": 2.0, "vento": 18.0, "corrente": 3.0},
