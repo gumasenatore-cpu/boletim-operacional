@@ -116,9 +116,10 @@ with st.sidebar.expander("Parâmetros Opcionais", expanded=False):
     if ativar_rumo_critico:
         rumo_embarcacao = st.number_input("Direção do Rumo / Heading (º)", min_value=0, max_value=360, value=90, step=10)
 
+# --- LIMITES OPERACIONAIS COM SUPORTE A ZONA DE ATENÇÃO CUSTOMIZADA ---
 limites_equipamentos = {
     "Monofeixe": {"onda": 2.5, "vento": 25.0, "corrente": 99.0},
-    "Multifeixe": {"onda": 1.5, "vento": 15.0, "corrente": 99.0},
+    "Multifeixe": {"onda": 1.5, "vento": 18.0, "corrente": 99.0, "onda_at": 1.0, "vento_at": 15.0},
     "SSS": {"onda": 2.5, "vento": 25.0, "corrente": 3.0},
     "Mag": {"onda": 2.0, "vento": 25.0, "corrente": 3.0},
     "SBP": {"onda": 2.0, "vento": 18.0, "corrente": 3.0},
@@ -133,10 +134,16 @@ if equipamentos_selecionados:
     limite_onda_ativo = min([limites_equipamentos[e]["onda"] for e in equipamentos_selecionados])
     limite_vento_ativo = min([limites_equipamentos[e]["vento"] for e in equipamentos_selecionados])
     limite_corrente_ativo = min([limites_equipamentos[e]["corrente"] for e in equipamentos_selecionados])
+    
+    # Extrai o limite inferior da Avaliação Técnica (se existir customizado, caso contrário usa 75%)
+    limite_onda_at_ativo = min([limites_equipamentos[e].get("onda_at", limites_equipamentos[e]["onda"] * 0.75) for e in equipamentos_selecionados])
+    limite_vento_at_ativo = min([limites_equipamentos[e].get("vento_at", limites_equipamentos[e]["vento"] * 0.75) for e in equipamentos_selecionados])
 else:
     limite_onda_ativo = 2.5
     limite_vento_ativo = 25.0
     limite_corrente_ativo = 99.0
+    limite_onda_at_ativo = 2.5 * 0.75
+    limite_vento_at_ativo = 25.0 * 0.75
 
 def graus_para_direcao(deg):
     if pd.isna(deg): return ""
@@ -283,7 +290,9 @@ if st.sidebar.button("Gerar Boletim Operacional") or 'df_atual' in st.session_st
                 return "SEM OPERACAO", f"Limite critico excedido{aviso_direcao}"
             
             limite_corrente_check = limite_corrente_ativo if limite_corrente_ativo < 10.0 else 99.0
-            if (limite_onda_ativo * 0.75 < onda <= limite_onda_ativo) or (limite_vento_ativo * 0.75 <= vento <= limite_vento_ativo) or ((limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)):
+            
+            # Nova regra para Avaliação Técnica contemplando limites dinâmicos
+            if (limite_onda_at_ativo <= onda <= limite_onda_ativo) or (limite_vento_at_ativo <= vento <= limite_vento_ativo) or ((limite_corrente_check < 99.0) and (limite_corrente_check * 0.75 <= corrente <= limite_corrente_check)):
                 return "AVALIACAO TECNICA", f"Condicao limitrofe{aviso_direcao}"
             
             return "FAVORAVEL" if aviso_direcao == "" else "AVALIACAO TECNICA", "Dentro da janela" if aviso_direcao == "" else f"Incidencia lateral critica{aviso_direcao}"
